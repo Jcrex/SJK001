@@ -236,9 +236,35 @@ Fuente: `/home/ws/install/custom_robots/share/custom_robots/models/f1/` dentro d
 | Centro de la línea en la salida | 317 (fila 470) → 320 (fila 245) | El coche sale casi centrado y alineado |
 | Color | Rojo puro, BGR = [0, 0, 216] | El umbral HSV `(0–10, 100–255, 60–255) ∪ (170–180, …)` funciona |
 
+## 5.2 Fase 1 — línea base con control P (2026-11-04)
+
+**Banco de pruebas** (`tools/vuelta.sh`): ejecuta `src/follow_line.py` dentro del contenedor con el HAL real y un `WebGUI` vacío. Antes de empezar recoloca el coche en la salida (`gz service /world/default/set_pose`) y quita la pausa. Cronometra la vuelta con `/f1/odom`: cuenta como vuelta cuando el coche se aleja más de 30 m y vuelve a menos de 2.5 m de la salida. Falla si la línea se pierde durante 3 s. Guarda el CSV en `logs/`, y `tools/resumen_log.py` lo resume. Mientras corre, **no hay que tocar la web**: recargarla reinicia Gazebo.
+
+Controlador: centroide del rojo en las filas 250–480, `w = −Kp·(cx − 320)` y `v` constante. Solo actualiza con fotograma nuevo (dt = 50.0 ms exactos).
+
+| v (m/s) | Kp (rad/s/px) | Vuelta (s, sim) | \|e\| medio (px) | Cambios de signo de w (/s) | Resultado |
+|---|---|---|---|---|---|
+| 3 | 0.005 | 144.5 | 33 | 0.05 | limpia |
+| 5 | 0.005 | 87.5 | 60 | 0.24 | limpia |
+| 7 | 0.005 | 62.3 | 89 | 0.50 | limpia |
+| 10 | 0.005 | — | — | — | pierde la línea en la 1.ª curva |
+| **10** | **0.008** | **43.5** | 80 | 0.83 | **limpia → referencia** |
+| 12 | 0.010 | 36.2 | — | — | completa |
+| 14 | 0.012 | 31.2 | 112 | 3.2 | oscila |
+| 17 | 0.015 | 26.2 | 187 | 3.7 | oscila mucho y llega al borde de la imagen |
+| 20 | 0.018 | 22.7 | 198 | 3.8 | completa de milagro (4 fotogramas sin línea, 445 m frente a 428) |
+| 20 | 0.025 | — | — | — | pierde la línea |
+| 24 | 0.016–0.020 | — | — | — | pierde la línea |
+
+**Conclusiones:**
+- El coche es cinemático (`VelocityControl`): no derrapa, así que **tiempo ≈ 428 m / v**. Todo se juega en mantener la línea a la máxima v posible.
+- Con P solo, el límite está entre 20 y 24 m/s. A partir de 14 m/s el coche oscila a unos 3–4 Hz: con un retardo de 50 ms y Kp alto, el lazo se queda sin margen de fase. **Aquí entra el plan:** la derivada filtrada (fase 3) da margen de fase, el *preview* y el FF (fases 4–5) adelantan el giro, y la v variable permite ir a más de 20 m/s en recta.
+- Referencia oficial para comparar: **43.5 s (v = 10, Kp = 0.008), vuelta limpia**. Techo del P: 22.7 s, al límite.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
 |---|---|---|---|
 | 2026-11-04 | — | — | Plan e investigación iniciales |
 | 2026-11-04 | 0 | Contenedor arrancado con GPU NVIDIA | Datos de cámara confirmados (5.1). API confirmada (BGR, `WebGUI`, sin límites de V/W, sin penalización). Medido: cámara a 20 Hz, RTF ≈ 0.90, máscara de 1.3 ms → **fase 0 cerrada** |
+| 2026-11-04 | 1 | **43.5 s** limpia (v = 10); techo del P: 22.7 s (v = 20, oscilando) | Banco de pruebas automático `tools/vuelta.sh`, ver 5.2 |
