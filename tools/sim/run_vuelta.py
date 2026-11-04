@@ -11,11 +11,13 @@ Uso: python3 run_vuelta.py CONTROLADOR.py LOG.csv [timeout_s]
 5. Para el coche, lo devuelve a la salida y pausa la simulación.
 Imprime una línea final "RESULTADO {json}".
 """
+import ctypes
 import json
 import math
 import os
 import subprocess
 import sys
+import signal
 import time
 
 import rclpy
@@ -24,6 +26,11 @@ from nav_msgs.msg import Odometry
 
 SALIDA = (53.462, -10.734, 0.004, -1.57)  # x, y, z, yaw del launcher del circuito simple
 STUB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stub")
+
+
+def _morir_con_el_padre():
+    """El controlador recibe SIGTERM si el banco muere (evita controladores huérfanos)."""
+    ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
 
 
 def gz(servicio, reqtype, req):
@@ -68,8 +75,19 @@ def main():
     rclpy.init()
     nodo = rclpy.create_node("banco_vuelta")
     pub = nodo.create_publisher(Twist, "/f1/cmd_vel", 10)
-    odo = {"msg": None}
-    nodo.create_subscription(Odometry, "/f1/odom", lambda m: odo.update(msg=m), 50)
+    odo = {"msg": None, "grabar": False}
+    log_odo = open(log_path.replace(".csv", "_odom.csv"), "w", buffering=1)
+    log_odo.write("t_sim,x,y,yaw,vx,wz\n")
+
+    def al_recibir_odom(m):
+        odo["msg"] = m
+        if odo["grabar"]:  # trayectoria real, para validar la percepción
+            q, p, tw = m.pose.pose.orientation, m.pose.pose.position, m.twist.twist
+            yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+            log_odo.write(f"{m.header.stamp.sec + m.header.stamp.nanosec * 1e-9:.3f},"
+                          f"{p.x:.4f},{p.y:.4f},{yaw:.5f},{tw.linear.x:.3f},{tw.angular.z:.4f}\n")
+
+    nodo.create_subscription(Odometry, "/f1/odom", al_recibir_odom, 50)
 
     def parar():
         for _ in range(5):
@@ -82,11 +100,13 @@ def main():
     pausa(False)
     time.sleep(0.5)
     parar()
+    odo["grabar"] = True
 
     entorno = dict(os.environ, SJK_LOG=log_path,
                    PYTHONPATH=f"{STUB_DIR}:/workspace/code:" + os.environ.get("PYTHONPATH", ""))
     proc = subprocess.Popen([sys.executable, controlador], env=entorno,
-                            stdout=subprocess.DEVNULL, stderr=open(log_path + ".err", "w"))
+                            stdout=subprocess.DEVNULL, stderr=open(log_path + ".err", "w"),
+                            preexec_fn=_morir_con_el_padre)
 
     inicio = None  # (t_sim, t_reloj, x, y)
     recorrido, ultimo = 0.0, None
@@ -123,6 +143,7 @@ def main():
                          "t_sim": round(ts - inicio[0], 2), "distancia_m": round(recorrido, 1)}
             break
 
+    odo["grabar"] = False
     proc.terminate()
     try:
         proc.wait(timeout=3)

@@ -261,6 +261,44 @@ Controlador: centroide del rojo en las filas 250–480, `w = −Kp·(cx − 320)
 - Con P solo, el límite está entre 20 y 24 m/s. A partir de 14 m/s el coche oscila a unos 3–4 Hz: con un retardo de 50 ms y Kp alto, el lazo se queda sin margen de fase. **Aquí entra el plan:** la derivada filtrada (fase 3) da margen de fase, el *preview* y el FF (fases 4–5) adelantan el giro, y la v variable permite ir a más de 20 m/s en recta.
 - Referencia oficial para comparar: **43.5 s (v = 10, Kp = 0.008), vuelta limpia**. Techo del P: 22.7 s, al límite.
 
+## 5.3 Fase 2 — percepción por scanlines (2026-11-04, EN CURSO)
+
+**Hecho** (en `src/follow_line.py`, con 21 pruebas en `tests/` que pasan con `tools/test.sh`):
+- 15 filas de scanline, de la 470 (0.14 m por delante) a la 242 (13.3 m). Si una fila tiene varios tramos rojos, se elige el más cercano al punto de la fila anterior.
+- Paso de píxel a suelo: `Z = F·H/(y−CY)`, `Y = −H·(x−CX)/(y−CY)`, con F = 320, CX = 320, CY = 239.5 y H = 0.104 m.
+- Parábola ponderada → `y0` (posición lateral) y `rumbo`. **Curvatura por ajuste algebraico de círculo** (la parábola la sobrestimaba un 26 %). El signo lo da la parábola. `kappa` usa todas las filas y `kappa_lejos` solo Z ≥ 1.5 m. Es recta si |κ| < 0.02.
+- En arcos sintéticos de R = 4–30 m, el error de κ es de 4 % como máximo, y en recta κ ≈ 1e-4.
+- Coste (`tools/bench_percepcion.py`): **fase 2 completa 0.68 ms** frente a 1.0 ms de la fase 1. Las dos son mínimas frente a los 50 ms entre fotogramas.
+- La GUI dibuja los puntos, el estado (RECTA o CURVA IZQ/DER), κ, v, w y el número de puntos. Se refresca a 10 Hz.
+- El control sigue siendo P sobre `e_px` (media de las filas ≥ 390): a v = 10 da **43.4 s**, igual que la fase 1.
+- El banco (`tools/vuelta.sh`) ahora guarda también la **odometría real** (`logs/*_odom.csv`: t, x, y, yaw, vx, wz). El controlador muere si muere el banco (PDEATHSIG), así que ya no quedan procesos huérfanos.
+- Análisis: `analysis/kappa_vs_trayectoria.py` (en el contenedor la gráfica falla por un problema de matplotlib; hay que hacerla en el host con `uv run --with matplotlib`). También `tools/sim/serie_cinematica.py v w s` y `prueba_cinematica.py` para mandar (v, w) fijos y ver la odometría.
+
+**Resultados de validación** (log `logs/20261104-195234_f2_v10*.csv`):
+- κ de la cámara frente a `w/v` mandada: **correlación de 0.94**, y la cámara ve la curva **0.25 s antes** (κ) o **0.35 s antes** (κ_lejos). La preview funciona.
+- Pero la pendiente es de unas 3×, y ∫κ·v·dt = −2.39 frente a −2π. **Con lo de abajo, `w/v` mandada NO sirve como referencia de curvatura.**
+- La odometría da un giro neto de −6.283 rad (la pista es una vuelta normal). ∫wz real = −6.36 rad, pero **∫w mandada = −8.99 rad**.
+- **PROBLEMA ABIERTO — el coche ignora `w` en algunos tramos a 10 m/s:** p. ej., entre t = 6.4 y 11 s de la vuelta se manda w = −0.32 constante, pero wz real = 0.00 y el error se queda clavado en 40 px. Con (v, w) fijos en la salida pasa esto:
+  - v = 2 y v = 5 con w = −0.3: gira bien (wz = −0.299);
+  - v = 10 con w = −0.3 o −0.6: gira 0.5 s y luego algo lo endereza (wz = +1.06, aparece vy) y avanza con el rumbo bloqueado en x ≈ 52.1.
+- Hipótesis descartada: la **pared invisible** (`simple_circuit/meshes/pared.stl`, solo colisión, 3 m de alto, alrededor de la pista). Durante la vuelta, el centro del coche estuvo siempre a ≥ 1.19 m de ella, y el coche mide 1.0 × 0.36 m (`Car.obj` × 0.2).
+- Hipótesis pendientes: (1) rozamiento o contacto del `Car.obj` con el suelo a alta v, que frena la rotación pequeña; (2) algo en `VelocityControl` o en el bridge con giros pequeños a alta v; (3) en la prueba a v = 10 sí pudo chocar con la pared, porque se desvía de la línea (mirar d_pared en ese experimento).
+
+**Siguiente paso al retomar:**
+1. Arrancar el docker (abajo). Si la web no está abierta, el simulador no arranca: abrir el ejercicio Follow Line en el navegador y conectar. Después no tocar la web mientras corra el banco.
+2. Investigar el bloqueo de giro: `serie_cinematica.py 10 -0.3 3` en un tramo libre, comprobando la distancia a la pared; probar v = 8, 10, 12 con w = 0.1–0.5; mirar `<surface>`/`<friction>` del suelo y la colisión del coche.
+3. Validar κ contra la **curvatura real de la odometría** (dyaw/ds de `_odom.csv`), no contra `w/v` mandada. Si hace falta, corregir H.
+4. Hacer la gráfica κ frente a la curvatura real en el host y guardarla en `analysis/`.
+5. Cerrar la fase 2 y pasar a la fase 3 (PID del T03).
+
+Arranque del entorno:
+```bash
+docker run -d --rm --name robotics --device /dev/dri --gpus all \
+  -p 6080-6090:6080-6090 -p 7163:7163 jderobot/robotics-backend:latest
+tools/test.sh                                  # pruebas
+SJK_V=10 SJK_KP=0.008 tools/vuelta.sh etiqueta 100   # vuelta cronometrada
+```
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -268,3 +306,4 @@ Controlador: centroide del rojo en las filas 250–480, `w = −Kp·(cx − 320)
 | 2026-11-04 | — | — | Plan e investigación iniciales |
 | 2026-11-04 | 0 | Contenedor arrancado con GPU NVIDIA | Datos de cámara confirmados (5.1). API confirmada (BGR, `WebGUI`, sin límites de V/W, sin penalización). Medido: cámara a 20 Hz, RTF ≈ 0.90, máscara de 1.3 ms → **fase 0 cerrada** |
 | 2026-11-04 | 1 | **43.5 s** limpia (v = 10); techo del P: 22.7 s (v = 20, oscilando) | Banco de pruebas automático `tools/vuelta.sh`, ver 5.2 |
+| 2026-11-04 | 2 (en curso) | 43.4 s (v = 10, mismo P) | Scanlines + κ por círculo (error ≤ 4 %), preview de 0.25–0.35 s. Problema abierto: el coche ignora `w` pequeña a 10 m/s en algunos tramos. Ver 5.3 |

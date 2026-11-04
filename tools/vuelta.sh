@@ -20,5 +20,6 @@ docker exec "${env_args[@]}" robotics bash -c \
   "source /opt/ros/humble/setup.bash && python3 /tmp/sjk_sim/run_vuelta.py /tmp/sjk_sim/follow_line.py /tmp/sjk_sim/$nombre $timeout" \
   2>&1 | grep -v RTPS_TRANSPORT_SHM
 docker cp "robotics:/tmp/sjk_sim/$nombre" "logs/$nombre" >/dev/null 2>&1 || true
+docker cp "robotics:/tmp/sjk_sim/${nombre%.csv}_odom.csv" "logs/${nombre%.csv}_odom.csv" >/dev/null 2>&1 || true
 docker exec robotics cat "/tmp/sjk_sim/$nombre.err" 2>/dev/null | grep -v RTPS_TRANSPORT_SHM | tail -5 || true
 echo "log: logs/$nombre"
