@@ -183,18 +183,62 @@ SJK001/
 
 ## 5. Riesgos y comprobaciones pendientes
 
-- [ ] **API del ejercicio:** cambia entre versiones de `robotics-backend`. Confirmarla en la fase 0.
-- [ ] **Resolución y frecuencia de la cámara:** de ellas dependen las filas de scanline y la T efectiva.
+- [x] **API del ejercicio** (ver 5.1): cambia entre versiones de `robotics-backend`. Confirmarla en la fase 0.
+- [x] **Resolución y frecuencia de la cámara** (640×480 a 20 Hz, ver 5.1): de ellas dependen las filas de scanline y la T efectiva.
 - [ ] **Fotogramas repetidos:** si el bucle va más rápido que la cámara, el término D sale 0 o salta. Detectar si el fotograma es nuevo y solo actualizar el PID cuando lo sea.
-- [ ] **Penalización por alejarse de la línea:** limita lo agresiva que puede ser la trazada F1.
+- [x] **Penalización por alejarse de la línea:** no hay. Antes: limita lo agresiva que puede ser la trazada F1.
 - [ ] **Offset excesivo:** la línea puede salir de la imagen. Limitarlo según la anchura visible.
 - [ ] **Sobreajuste a un circuito:** validar en al menos dos circuitos.
 - [ ] **Rangos HSV:** ajustarlos con capturas reales (el rojo cubre H≈0 y H≈180).
 
 ---
 
+## 5.1 Datos confirmados en la fase 0 (inspección del contenedor, 2026-11-04)
+
+Fuente: `/home/ws/install/custom_robots/share/custom_robots/models/f1/` dentro de `jderobot/robotics-backend:latest` (Gazebo Harmonic, ROS 2 Humble).
+
+| Dato | Valor | Consecuencia para el plan |
+|---|---|---|
+| Resolución | 640×480, `R8G8B8` | Las filas de scanline previstas valen tal cual |
+| Frecuencia de cámara | **20 Hz** (`update_rate`) | T efectivo del PID ≈ 50 ms. Si el bucle va más rápido, habrá fotogramas repetidos: actualizar el PID solo con fotograma nuevo |
+| FOV horizontal | 1.57 rad (90°) → focal ≈ 320 px | Permite pasar píxeles a metros (IPM) |
+| Pose de la cámara | `xyz = 0.45 0.04 0.1`, `rpy = 0 0 0` | Cabeceo 0: el **horizonte está en la fila ≈240**. Solo las filas >240 ven el suelo. La cámara está **4 cm a la izquierda** del eje: con el coche centrado, la línea aparece algo desplazada a la derecha, más en las filas cercanas |
+| Alcance | `clip far = 15 m` | El *preview* no ve más allá de 15 m |
+| Ruido | **gaussiano, σ = 0.007** | La imagen sí tiene algo de ruido (corrige el supuesto del apartado 0). Sigue siendo pequeño; el umbral HSV lo absorbe, pero refuerza el filtro de la derivada y sirve para detectar fotogramas nuevos (dos fotogramas distintos nunca son idénticos) |
+| Actuación | Plugin `VelocityControl` en `/f1/cmd_vel` (variante holonómica); hay también variante Ackermann | `setV`/`setW` mandan un *twist* directo: no hay dinámica de dirección que modelar en la versión normal |
+| Circuitos | simple, montmelo, montreal, nurburgring, monaco, spa | Validar en al menos dos |
+
+**API real** (el frontend la copia a `/workspace/code/` del contenedor al conectar):
+
+| Elemento | Detalle | Consecuencia |
+|---|---|---|
+| `HAL.getImage()` | Array **BGR** 480×640×3. Convierte el mensaje ROS con `cv_bridge` **en cada llamada**, aunque el fotograma no haya cambiado | Llamarla solo cuando haya fotograma nuevo |
+| Fotograma nuevo | `HAL.camera_node.last_img_.header.stamp` (sello de simulación) | Detección barata de fotograma nuevo; da también `dt` en tiempo simulado para el PID |
+| `HAL.setV(v)`, `HAL.setW(w)` | `Twist` en `/f1/cmd_vel`. `MotorsNode(topic, 4, 0.3)` **ignora** los límites | Sin saturación en el HAL: `umin`/`umax` del anti-windup los ponemos nosotros |
+| Interfaz | Módulo **`WebGUI`** (`WebGUI.showImage(img)`), no `GUI`. Codifica JPEG en otro hilo | Mostrar imágenes pequeñas o no en cada iteración para no cargar la CPU |
+| `Frequency.tick(hz)` | Duerme hasta completar el periodo | Opcional; mejor sincronizar con el fotograma nuevo |
+| Cronómetro de vuelta | `lap.py` usa `datetime.now()`, **hora de reloj**, y arranca con play | Si la simulación va por debajo de tiempo real (RTF < 1), la vuelta "dura más". Medir el RTF |
+| Física | Paso por defecto (1 ms), objetivo RTF = 1 | — |
+| Modo del coche | `mode:=holo` en el circuito simple, salida en (53.46, −10.73), yaw −π/2 | — |
+| Penalizaciones | **No hay** penalización por salirse de la línea (confirmado por el usuario) | La trazada F1 puede ser agresiva; el único límite es no perder la línea de vista |
+
+**Medidas con la simulación en marcha** (proceso aparte suscrito a `/f1/camera/image_raw`, coche parado en la salida del circuito simple):
+
+| Medida | Valor | Consecuencia |
+|---|---|---|
+| Fotogramas | 20.2 Hz en tiempo simulado, **18.1 Hz de reloj** | **RTF ≈ 0.90**: la simulación va al 90 % del tiempo real y el cronómetro (hora de reloj) lo nota. Cerrar programas pesados al medir tiempos y comparar siempre en las mismas condiciones |
+| Codificación del topic | `rgb8`; el HAL la pasa a BGR | — |
+| Conversión `cv_bridge` | ≈ 0.3–0.5 ms | Poco coste, pero no repetirla sin fotograma nuevo |
+| Máscara HSV de la imagen completa | ≈ 1.3 ms | — |
+| Máscara HSV de 8 filas | ≈ 0.03 ms | **40× más rápida**, pero los dos tiempos son mínimos frente a los 50 ms entre fotogramas. Las scanlines se justifican por la **información de *preview***, no por la velocidad. El cuello de botella es la cámara a 20 Hz |
+| Horizonte | Primera fila con rojo: **239** | Confirma el cálculo (cabeceo 0 → fila 240) |
+| Anchura de la línea | 243 px (fila 470), 118 (350), 26 (260), 10 (245) | La línea es muy ancha abajo y fina cerca del horizonte, pero se detecta incluso en la fila 245 |
+| Centro de la línea en la salida | 317 (fila 470) → 320 (fila 245) | El coche sale casi centrado y alineado |
+| Color | Rojo puro, BGR = [0, 0, 216] | El umbral HSV `(0–10, 100–255, 60–255) ∪ (170–180, …)` funciona |
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
 |---|---|---|---|
 | 2026-11-04 | — | — | Plan e investigación iniciales |
+| 2026-11-04 | 0 | Contenedor arrancado con GPU NVIDIA | Datos de cámara confirmados (5.1). API confirmada (BGR, `WebGUI`, sin límites de V/W, sin penalización). Medido: cámara a 20 Hz, RTF ≈ 0.90, máscara de 1.3 ms → **fase 0 cerrada** |
