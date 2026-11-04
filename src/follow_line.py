@@ -17,8 +17,8 @@ FRANJA = (250, 480)  # filas usadas para el centroide (por debajo del horizonte,
 ROJO_BAJO = ((0, 100, 60), (10, 255, 255))
 ROJO_ALTO = ((170, 100, 60), (180, 255, 255))
 
-V = float(os.environ.get("SJK_V", 3.0))  # m/s, constante en la fase 1
-KP = float(os.environ.get("SJK_KP", 0.005))  # rad/s por píxel de error
+V = float(os.environ.get("SJK_V", 10.0))  # m/s, constante en la fase 1
+KP = float(os.environ.get("SJK_KP", 0.008))  # rad/s por píxel de error
 V_PERDIDA = 1.0  # m/s cuando no se ve la línea
 LOG = os.environ.get("SJK_LOG")  # ruta del CSV; sin definir no se guarda nada
 
