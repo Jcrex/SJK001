@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel Follow Line</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+<link rel="stylesheet" href="/static/panel.css">
+</head>
+<body>
+<header>
+  <div class="titulo">Panel Follow Line</div>
+  <div id="estado" class="estado off">sin controlador</div>
+  <div class="kpi"><span>vuelta</span><b id="k-vuelta">–</b></div>
+  <div class="kpi"><span>t vuelta</span><b id="k-tvuelta">–</b></div>
+  <div class="kpi"><span>última</span><b id="k-ultima">–</b></div>
+  <div class="kpi"><span>mejor</span><b id="k-mejor">–</b></div>
+  <div class="kpi"><span>Hz</span><b id="k-hz">–</b></div>
+  <div class="kpi"><span>|e| 5 s</span><b id="k-e">–</b></div>
+  <div class="botones">
+    <label>ventana <select id="ventana">
+      <option>10</option><option selected>20</option><option>30</option><option>60</option><option>120</option>
+    </select> s</label>
+    <button id="b-pausa" title="Congela las gráficas (se sigue grabando)">Pausar gráficas</button>
+    <button id="b-marca" title="Anota el instante en el CSV (tecla M)">Marca (M)</button>
+    <button id="b-reset-pid" title="Pone a cero la I y el filtro de D">Reset PID</button>
+    <button id="b-nueva" title="Cierra los CSV y empieza otros; reinicia el cronómetro">Nueva prueba</button>
+  </div>
+</header>
+
+<main>
+  <aside id="lateral">
+    <section>
+      <h2>Parámetros <small id="fichero"></small></h2>
+      <div id="sliders"><p class="nota">Pulsa play en la web del ejercicio con src/follow_line.py.</p></div>
+    </section>
+    <section class="presets">
+      <h2>Presets</h2>
+      <div class="fila">
+        <input id="preset-nombre" placeholder="nombre">
+        <button id="b-guardar">Guardar</button>
+      </div>
+      <div class="fila">
+        <select id="preset-lista"></select>
+        <button id="b-cargar">Cargar</button>
+        <button id="b-defecto" title="Vuelve todos los parámetros a su valor por defecto">Por defecto</button>
+      </div>
+    </section>
+  </aside>
+
+  <div id="centro">
+    <div id="graficas"></div>
+    <div class="dos">
+      <section class="tarjeta">
+        <h2>Mapa <small>color = |e| (verde → rojo); gris = vueltas anteriores</small></h2>
+        <canvas id="mapa"></canvas>
+      </section>
+      <section class="tarjeta">
+        <h2>¿Qué parámetro afecta?
+          <small>
+            X <select id="disp-x"></select>
+            Y <select id="disp-y"></select>
+          </small>
+        </h2>
+        <canvas id="dispersion"></canvas>
+      </section>
+    </div>
+    <section class="tarjeta">
+      <h2>Vueltas <small>* = parámetros cambiados durante la vuelta · clic en una fila carga sus parámetros</small></h2>
+      <div class="tabla"><table id="tabla"><thead></thead><tbody></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<div id="aviso" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+<script src="/static/panel.js"></script>
+</body>
+</html>

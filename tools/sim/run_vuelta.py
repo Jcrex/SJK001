@@ -102,8 +102,12 @@ def main():
     parar()
     odo["grabar"] = True
 
+    hal = "/workspace/code"
+    if not os.path.exists(os.path.join(hal, "HAL.py")):  # la web aún no lo ha copiado
+        hal = os.path.join(os.path.dirname(STUB_DIR), "hal_respaldo")
+        print("[banco] sin HAL real en /workspace/code: uso tools/sim/hal_respaldo", flush=True)
     entorno = dict(os.environ, SJK_LOG=log_path,
-                   PYTHONPATH=f"{STUB_DIR}:/workspace/code:" + os.environ.get("PYTHONPATH", ""))
+                   PYTHONPATH=f"{STUB_DIR}:{hal}:" + os.environ.get("PYTHONPATH", ""))
     proc = subprocess.Popen([sys.executable, controlador], env=entorno,
                             stdout=subprocess.DEVNULL, stderr=open(log_path + ".err", "w"),
                             preexec_fn=_morir_con_el_padre)

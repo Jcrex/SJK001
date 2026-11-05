@@ -176,7 +176,8 @@ SJK001/
 ├── src/modules/            # perception.py, pid.py, planner.py (desarrollo y pruebas fuera del simulador)
 ├── tests/                  # pruebas de pid.py y perception.py con imágenes sintéticas
 ├── logs/                   # CSV de cada ejecución
-└── analysis/               # notebooks y scripts de gráficas
+├── analysis/               # notebooks y scripts de gráficas
+└── tools/panel/            # panel de ajuste en vivo (tools/panel.sh → localhost:8050)
 ```
 
 ---
@@ -278,18 +279,36 @@ Controlador: centroide del rojo en las filas 250–480, `w = −Kp·(cx − 320)
 - κ de la cámara frente a `w/v` mandada: **correlación de 0.94**, y la cámara ve la curva **0.25 s antes** (κ) o **0.35 s antes** (κ_lejos). La preview funciona.
 - Pero la pendiente es de unas 3×, y ∫κ·v·dt = −2.39 frente a −2π. **Con lo de abajo, `w/v` mandada NO sirve como referencia de curvatura.**
 - La odometría da un giro neto de −6.283 rad (la pista es una vuelta normal). ∫wz real = −6.36 rad, pero **∫w mandada = −8.99 rad**.
-- **PROBLEMA ABIERTO — el coche ignora `w` en algunos tramos a 10 m/s:** p. ej., entre t = 6.4 y 11 s de la vuelta se manda w = −0.32 constante, pero wz real = 0.00 y el error se queda clavado en 40 px. Con (v, w) fijos en la salida pasa esto:
-  - v = 2 y v = 5 con w = −0.3: gira bien (wz = −0.299);
-  - v = 10 con w = −0.3 o −0.6: gira 0.5 s y luego algo lo endereza (wz = +1.06, aparece vy) y avanza con el rumbo bloqueado en x ≈ 52.1.
-- Hipótesis descartada: la **pared invisible** (`simple_circuit/meshes/pared.stl`, solo colisión, 3 m de alto, alrededor de la pista). Durante la vuelta, el centro del coche estuvo siempre a ≥ 1.19 m de ella, y el coche mide 1.0 × 0.36 m (`Car.obj` × 0.2).
-- Hipótesis pendientes: (1) rozamiento o contacto del `Car.obj` con el suelo a alta v, que frena la rotación pequeña; (2) algo en `VelocityControl` o en el bridge con giros pequeños a alta v; (3) en la prueba a v = 10 sí pudo chocar con la pared, porque se desvía de la línea (mirar d_pared en ese experimento).
+**Resuelto (2026-11-05, PC nuevo) — el coche "ignora" las `w` pequeñas:**
+- **La prueba con (v, w) fijos en la salida era un choque.** Hay una pared lisa en **x = 51.95**, a 1.5 m a la izquierda de la salida (distancia punto–triángulo a `pared.stl`). Con w = −0.3 el coche gira hacia ella, la toca en x ≈ 52.14 (medio ancho = 0.18 m) y desliza pegado. Las paredes rodean la pista a ~1.5 m de la línea.
+- **Lo de la vuelta es otra cosa: la fricción del simulador.** En modo holo el coche es **un solo cuerpo** (`Car.obj` × 0.2, sin ruedas) que desliza sobre el plano mientras `VelocityControl` le impone la velocidad. DART calcula la fricción por separado en los ejes X/Y del mundo. Cuando el coche avanza **alineado con un eje**, la componente perpendicular queda en rozamiento estático y anula los giros pequeños:
+  - en marcha a 8 m/s, alineado: w = −0.15 → **1 %** del giro; girado 0.15 rad: **91 %**;
+  - una vez bloqueado, w = −0.33 no lo suelta; −0.5 sí (tras ~0.2 s); con −0.8 gira al 99 %;
+  - reproduciendo en bucle abierto los (v, w) del log (`tools/sim/reproducir_log.py`) el bloqueo sale **en los mismos tramos** (yaw clavado en 1.5708 y 3.1410): es determinista.
+  - Consecuencias: (1) hay una **zona muerta de w ≈ ±0.35–0.5 rad/s cuando el coche va alineado con un eje** (las rectas del circuito simple lo están). El error residual en recta es de 2–3 cm, inofensivo. Pero la I del PID puede acumularse en esa zona y soltarse de golpe, así que conviene vigilarlo en las gráficas de `wz real`. (2) La `w` mandada no sirve como medida de curvatura: hay que usar la odometría.
+- **κ salía ~3 veces pequeña por la calibración de la cámara, no por la referencia.** Frente a la odometría: correlación 0.96 y adelanto de 0.30 s (κ) o 0.45 s (κ_lejos), pero con pendiente 3.0, y el giro neto por la cámara salía −2.40 rad frente a −2π. La causa es que el coche apoya **0.52° morro abajo** (cuaternión de Gazebo), lo que sube el horizonte. Calibrado con desplazamientos laterales conocidos (`tools/sim/calibrar_h.py`, 44 puntos): **CY = 237.45 px** (antes 239.5) y **H = 0.1015 m** (antes 0.104). La fila 242 estaba en realidad a 7.1 m, no a 13.3. La "primera fila con rojo = 239" era el corte de la cámara a 15 m, no el horizonte. Se añaden las filas 241 (9.1 m) y 240 (12.7 m).
+- Comprobación en fotos fijas (`tools/sim/foto_pose.py`): curvas de R = 7.0 y 6.5 m (odometría) → κ da **7.0 y 6.4 m**; en recta κ = 0. En la curva larga de R = 35 m da 50 m (antes 94).
+- Además, con el coche centrado la línea sale centrada (x ≈ 319): el desfase de 4 cm de la cámara no se aprecia.
+- Gráfica: `analysis/kappa_vs_odometria_v10.png` (log anterior a la calibración). El script ya compara con la odometría.
 
-**Siguiente paso al retomar:**
-1. Arrancar el docker (abajo). Si la web no está abierta, el simulador no arranca: abrir el ejercicio Follow Line en el navegador y conectar. Después no tocar la web mientras corra el banco.
-2. Investigar el bloqueo de giro: `serie_cinematica.py 10 -0.3 3` en un tramo libre, comprobando la distancia a la pared; probar v = 8, 10, 12 con w = 0.1–0.5; mirar `<surface>`/`<friction>` del suelo y la colisión del coche.
-3. Validar κ contra la **curvatura real de la odometría** (dyaw/ds de `_odom.csv`), no contra `w/v` mandada. Si hace falta, corregir H.
-4. Hacer la gráfica κ frente a la curvatura real en el host y guardarla en `analysis/`.
-5. Cerrar la fase 2 y pasar a la fase 3 (PID del T03).
+## 5.4 Flujo de trabajo con el panel en vivo (desde 2026-11-05)
+
+El usuario ejecuta el controlador desde la web (así ve el coche) y ajusta los parámetros en vivo; el banco `tools/vuelta.sh` queda para pruebas automáticas.
+
+1. `tools/panel.sh` en el PC → abrir **http://localhost:8050**.
+2. Pegar `src/follow_line.py` en el editor del ejercicio y pulsar play. El controlador abre la telemetría en el puerto **6089** del contenedor (mapeado); el panel se conecta solo. No se usa el sentido contenedor → PC porque `ufw` lo bloquea.
+3. En el panel:
+   - **sliders** de todos los parámetros de `PARAMS` (velocidad, PID del T03, FF, gain scheduling), que se aplican al momento;
+   - **gráficas** de e, w (P/I/D/FF y `wz` real), v, κ frente a curvatura real, y percepción. Los cambios de parámetros, las marcas (tecla M) y las vueltas salen como líneas verticales;
+   - **mapa** de la vuelta coloreado por |e|;
+   - **tabla de vueltas**: tiempo, |e| medio/rms/máx, perdidos, cambios de signo de w/s y los parámetros de cada vuelta (con * si cambiaron durante la vuelta). Clic en una fila → recarga esos parámetros;
+   - **dispersión parámetro → métrica** entre vueltas, para ver qué parámetro afecta a qué;
+   - **presets** (`tools/panel/presets/*.json`).
+4. Grabación automática en `logs/<fecha>_panel.csv` (todos los fotogramas, con los parámetros vigentes) y `logs/<fecha>_panel_vueltas.csv`. Cada play (o el botón «Nueva prueba») abre ficheros nuevos.
+
+Con los valores por defecto, el controlador es el P de la fase 1 (v = 10, Kp = 0.008). Ti = 0 y Td = 0 desactivan I y D.
+
+**Siguiente paso:** fase 3, en la que el usuario sintoniza el PID con el panel. Hay que validar la nueva calibración con una vuelta completa: la curvatura de la gráfica «κ frente a real» debería tener pendiente ≈ 1.
 
 Arranque del entorno:
 ```bash
@@ -307,3 +326,4 @@ SJK_V=10 SJK_KP=0.008 tools/vuelta.sh etiqueta 100   # vuelta cronometrada
 | 2026-11-04 | 0 | Contenedor arrancado con GPU NVIDIA | Datos de cámara confirmados (5.1). API confirmada (BGR, `WebGUI`, sin límites de V/W, sin penalización). Medido: cámara a 20 Hz, RTF ≈ 0.90, máscara de 1.3 ms → **fase 0 cerrada** |
 | 2026-11-04 | 1 | **43.5 s** limpia (v = 10); techo del P: 22.7 s (v = 20, oscilando) | Banco de pruebas automático `tools/vuelta.sh`, ver 5.2 |
 | 2026-11-04 | 2 (en curso) | 43.4 s (v = 10, mismo P) | Scanlines + κ por círculo (error ≤ 4 %), preview de 0.25–0.35 s. Problema abierto: el coche ignora `w` pequeña a 10 m/s en algunos tramos. Ver 5.3 |
+| 2026-11-05 | 2 → 3 | — | PC nuevo. Bloqueo de giro explicado (fricción de DART alineada con los ejes + pared junto a la salida). Cámara recalibrada (CY = 237.45, H = 0.1015): κ correcta en curvas cerradas. PID del T03 en el controlador y panel de ajuste en vivo (5.4) |

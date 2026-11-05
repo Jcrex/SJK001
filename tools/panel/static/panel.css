@@ -1,0 +1,65 @@
+:root {
+  --fondo: #f6f7f9; --tarjeta: #ffffff; --texto: #1c2430; --suave: #5d6b7e; --borde: #dde2e8;
+  --acento: #2f6fde; --ok: #1f9d55; --mal: #d64545;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #12161c; --tarjeta: #1b2129; --texto: #e3e8ef; --suave: #95a2b3; --borde: #2c3440;
+    --acento: #6b9cff; --ok: #3ccf7c; --mal: #ff6b6b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto);
+  font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 16px; padding: 8px 16px; background: var(--tarjeta); border-bottom: 1px solid var(--borde); }
+.titulo { font-weight: 650; font-size: 15px; }
+.estado { padding: 2px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
+.estado.on { background: var(--ok); } .estado.off { background: var(--mal); }
+.kpi { display: flex; flex-direction: column; min-width: 56px; }
+.kpi span { font-size: 11px; color: var(--suave); }
+.kpi b { font-variant-numeric: tabular-nums; font-size: 15px; }
+.botones { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, select, input { font: inherit; color: var(--texto); background: var(--fondo);
+  border: 1px solid var(--borde); border-radius: 6px; padding: 3px 8px; }
+button { cursor: pointer; } button:hover { border-color: var(--acento); }
+button.activo { background: var(--acento); color: #fff; border-color: var(--acento); }
+
+main { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 12px; padding: 12px 16px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+aside section, .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 12px; }
+aside { position: sticky; top: 64px; align-self: start; max-height: calc(100vh - 76px); overflow-y: auto; }
+h2 { font-size: 13px; margin: 0 0 8px; }
+h2 small, .nota { color: var(--suave); font-weight: 400; }
+h3 { font-size: 12px; margin: 12px 0 4px; color: var(--acento); text-transform: uppercase; letter-spacing: .04em; }
+
+.param { display: grid; grid-template-columns: 1fr 78px 22px; gap: 2px 6px; align-items: center;
+  margin-bottom: 6px; }
+.param label { grid-column: 1 / 4; display: flex; justify-content: space-between; gap: 6px; }
+.param label .desc { color: var(--suave); font-size: 11px; text-align: right; }
+.param input[type=range] { width: 100%; accent-color: var(--acento); }
+.param input[type=number] { width: 78px; padding: 2px 4px; font-variant-numeric: tabular-nums; }
+.param.cambiado label b { color: var(--acento); }
+.param.pendiente input[type=number] { border-color: orange; }
+.param button { padding: 0 4px; font-size: 12px; }
+.presets .fila { display: flex; gap: 6px; margin-bottom: 6px; } .presets input, .presets select { flex: 1; min-width: 0; }
+
+#graficas .uplot { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px;
+  padding: 6px 4px 2px; margin-bottom: 10px; }
+.u-title { font-size: 13px !important; font-weight: 600 !important; text-align: left !important; padding-left: 10px; }
+.u-legend { font-size: 12px; } .u-legend .u-value { font-variant-numeric: tabular-nums; }
+.dos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 1200px) { .dos { grid-template-columns: 1fr; } }
+canvas { width: 100%; height: 340px; display: block; }
+.tabla { overflow-x: auto; max-height: 340px; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; white-space: nowrap; }
+th, td { padding: 3px 8px; border-bottom: 1px solid var(--borde); text-align: right; }
+th { position: sticky; top: 0; background: var(--tarjeta); color: var(--suave); font-weight: 500; }
+tbody tr { cursor: pointer; } tbody tr:hover { background: var(--fondo); }
+tr.mejor td { color: var(--ok); font-weight: 600; }
+td.dif { color: var(--acento); }
+#aviso { position: fixed; right: 16px; bottom: 16px; z-index: 10; max-width: 420px; padding: 8px 12px;
+  background: var(--texto); color: var(--fondo); border-radius: 8px; opacity: 0; transform: translateY(8px);
+  transition: opacity .2s, transform .2s; pointer-events: none; }
+#aviso.visible { opacity: 1; transform: none; }
