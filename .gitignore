@@ -1,2 +1,12 @@
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
+
+# Datos generados al ejecutar (registros del panel y estudios del optimizador).
+# Los logs que ya estaban en el repo siguen versionados; los nuevos no se suben.
+logs/
+
+# Presets que escribe el optimizador con el mejor ensayo de cada estudio
+tools/panel/presets/optuna_*.json
