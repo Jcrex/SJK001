@@ -52,7 +52,7 @@ Se discretiza con Euler hacia atrás, con el periodo $T$ **medido** en cada paso
 I_k &= I_{k-1} + q_i\,e_k, & q_i &= K_p\,T/T_i\\
 e_{f,k} &= a\,e_{f,k-1} + (1-a)\,(c\,r_k - y_k), & a &= \tau_d/(T+\tau_d)\\
 D_k &= q_d\,(e_{f,k} - e_{f,k-1}), & q_d &= K_p\,T_d/T\\
-u_k &= \operatorname{sat}\!\big(K_p(b\,r_k - y_k) + I_k + D_k + u_{FF,k}\big)
+u_k &= \mathrm{sat}\!\big(K_p(b\,r_k - y_k) + I_k + D_k + u_{FF,k}\big)
 \end{aligned}
 ```
 
@@ -64,7 +64,7 @@ Aquí la referencia es la línea centrada ($r = 0$), la medida $y$ es el error e
 
 ```math
 \boxed{\;
-w_k = \operatorname{sat}_{\pm w_{max}}\Big(
+w_k = \mathrm{sat}_{\pm w_{max}}\Big(
 \underbrace{-K_p'\,e_k}_{P}
 \;\underbrace{-\,K_p'\,\tfrac{T_d}{T}\,\big(\bar e_k-\bar e_{k-1}\big)}_{D\ \text{filtrada}}
 \;+\;\underbrace{I_k}_{=\,0}
@@ -81,7 +81,7 @@ K_p' &= \frac{K_p}{1 + k_{v}\,v_k} && \text{(ganancia según la velocidad)}\\
 e_k &= -F\,\frac{Y(L)}{L}, \quad L = \max\!\big(v_k\,t_{mirar},\ z_{min}\big) && \text{(error con mirada adelantada)}\\
 \bar e_k &= a\,\bar e_{k-1} + (1-a)\,e_k, \quad a = \frac{T_d/N}{T + T_d/N} && \text{(filtro de la D)}\\
 e^{hor}_k &= \overline{x}_{banda} - c_x && \text{(columna media de la línea en el horizonte)}\\
-v_k &= \operatorname{rampa}\!\Big(\operatorname{clip}\Big(\frac{v_{max}}{1 + k_{vc}\,|\kappa_{lejos}|},\ v_{min},\ v_{max}\Big)\Big) && \text{(perfil de velocidad)}
+v_k &= \mathrm{rampa}\!\Big(\mathrm{clip}\Big(\frac{v_{max}}{1 + k_{vc}\,|\kappa_{lejos}|},\ v_{min},\ v_{max}\Big)\Big) && \text{(perfil de velocidad)}
 \end{aligned}
 ```
 
