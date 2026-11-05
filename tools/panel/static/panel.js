@@ -9,8 +9,8 @@ const MAX_PUNTOS = 3000;
 // --- Gráficas -----------------------------------------------------------------
 // [clave, etiqueta, color, ancho, discontinua]
 const GRAFICAS = [
-  { titulo: "Error lateral e (px) · + = línea a la derecha del coche", series: [
-    ["e", "e", "#2f6fde", 1.6]] },
+  { titulo: "Error lateral (px) · + = línea a la derecha · e = filas cercanas, e_ctl = el que usa el PID", series: [
+    ["e", "e", "#2f6fde", 1.4], ["e_ctl", "e_ctl", "#d97706", 1.4], ["L", "L mirada (m)", "#16a34a", 1, true]] },
   { titulo: "Giro (rad/s) · w mandada y sus partes; wz = giro real (odometría)", series: [
     ["w", "w", "#111827", 1.8], ["p", "P", "#2f6fde", 1], ["i", "I", "#d97706", 1],
     ["d", "D", "#16a34a", 1], ["ff", "FF", "#9333ea", 1], ["wz", "wz real", "#dc2626", 1.2, true]] },
@@ -294,6 +294,16 @@ function dibujarMapa() {
 }
 
 // --- Vueltas: tabla y dispersión ------------------------------------------------
+function pintarOptimizador(m) {
+  const caja = $("optimizador");
+  caja.hidden = false;
+  const mejor = m.mejor ? `${m.mejor.valor.toFixed(2)} (ensayo ${m.mejor.ensayo}, ${m.mejor.tiempo_s} s)` : "–";
+  caja.innerHTML = `<h2>Optimizador <small>${m.activo ? "en marcha" : "parado"}</small></h2>
+    <div class="opt"><span>estudio</span><b>${m.estudio}</b><span>ensayo</span><b>${m.ensayo}</b>
+    <span>fase</span><b>${m.fase}</b><span>mejor J</span><b>${mejor}</b>
+    <span>último</span><b>${m.ultimo || "–"}</b></div>`;
+}
+
 const METRICAS = ["tiempo_s", "tiempo_reloj_s", "e_abs_medio", "e_rms", "e_max", "perdidos",
   "cambios_w_s", "w_abs_medio", "v_media", "distancia_m"];
 
@@ -314,22 +324,25 @@ function variaEnVueltas() {
 function pintarTabla() {
   const varian = new Set(variaEnVueltas());
   const params = esquema.map((p) => p.nombre);
-  const cols = ["vuelta", ...METRICAS.filter((m) => m !== "distancia_m"), ...params];
+  const cols = ["vuelta", "motivo", ...METRICAS.filter((m) => m !== "distancia_m"), ...params];
   $("tabla").querySelector("thead").innerHTML =
     "<tr>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
-  const validas = vueltas.filter((v) => !v.params_cambiados);
-  const mejor = Math.min(...(validas.length ? validas : vueltas).map((v) => v.tiempo_s));
+  const completas = vueltas.filter((v) => v.completada !== 0);
+  const limpias = completas.filter((v) => !v.params_cambiados);
+  const mejor = Math.min(...(limpias.length ? limpias : completas).map((v) => v.tiempo_s));
   $("tabla").querySelector("tbody").innerHTML = vueltas.slice().reverse().map((v) => {
     const celdas = cols.map((c) => {
       let txt = v[c];
       if (c === "vuelta" && v.params_cambiados) txt += "*";
+      if (c === "motivo") txt = v.completada === 0 ? "✗ " + v.motivo : "✓";
       const cls = varian.has(c) ? ' class="dif"' : "";
       return `<td${cls}>${typeof txt === "number" ? +txt.toPrecision(4) : txt}</td>`;
     });
     return `<tr data-v="${v.vuelta}"${v.tiempo_s === mejor ? ' class="mejor"' : ""}>${celdas.join("")}</tr>`;
   }).join("");
-  $("k-ultima").textContent = vueltas.length ? vueltas[vueltas.length - 1].tiempo_s.toFixed(2) + " s" : "–";
-  $("k-mejor").textContent = vueltas.length ? mejor.toFixed(2) + " s" : "–";
+  const ult = completas[completas.length - 1];
+  $("k-ultima").textContent = ult ? ult.tiempo_s.toFixed(2) + " s" : "–";
+  $("k-mejor").textContent = completas.length ? mejor.toFixed(2) + " s" : "–";
 }
 
 $("tabla").addEventListener("click", (ev) => {
@@ -374,6 +387,15 @@ function dibujarDispersion() {
   ctx.fillText(`${ky} frente a ${kx}`, L + 6, 22);
   for (const [x, y, v] of pts) {
     ctx.beginPath();
+    if (v.completada === 0) {  // intento fallido: aspa roja
+      ctx.strokeStyle = css("--mal");
+      ctx.moveTo(px(x) - 5, py(y) - 5); ctx.lineTo(px(x) + 5, py(y) + 5);
+      ctx.moveTo(px(x) + 5, py(y) - 5); ctx.lineTo(px(x) - 5, py(y) + 5);
+      ctx.stroke();
+      ctx.fillStyle = css("--suave");
+      ctx.fillText(v.vuelta, px(x) + 7, py(y) - 5);
+      continue;
+    }
     ctx.arc(px(x), py(y), 5, 0, 2 * Math.PI);
     ctx.strokeStyle = ctx.fillStyle = css("--acento");
     if (v.params_cambiados) ctx.stroke(); else ctx.fill();
@@ -395,6 +417,12 @@ function conectar() {
     if (m.tipo === "dato") anadirDato(m);
     else if (m.tipo === "params") nuevosValores(m.valores, m.pendiente);
     else if (m.tipo === "aviso") aviso(m.texto);
+    else if (m.tipo === "reinicio") {
+      if (buf.t.length) eventos.push({ t: buf.t[buf.t.length - 1], texto: "reinicio: " + m.motivo, color: css("--mal") });
+      if (tray.length) trayAnt.push(tray);
+      tray = [];
+      if (m.motivo !== "pedido") aviso(`Reinicio automático (${m.motivo}): el coche vuelve a la salida`);
+    } else if (m.tipo === "opt_estado") pintarOptimizador(m);
     else if (m.tipo === "vuelta") {
       vueltas.push(m.fila);
       actualizarSelects();
@@ -416,6 +444,10 @@ function conectar() {
       e.className = "estado " + (m.conectado ? "on" : "off");
       e.textContent = m.conectado ? "controlador conectado" : "esperando al controlador (play en la web)";
       $("fichero").textContent = m.fichero ? `→ logs/${m.fichero}.csv` : "";
+      if (m.desactualizado) {
+        e.className = "estado off";
+        e.textContent = "panel desactualizado: reinícialo (tools/panel.sh) y recarga";
+      }
       $("preset-lista").innerHTML = m.presets.map((p) => `<option>${p}</option>`).join("");
     }
   };
@@ -442,6 +474,7 @@ document.addEventListener("keydown", (ev) => {
   if ((ev.key === "m" || ev.key === "M") && !["INPUT", "SELECT"].includes(document.activeElement.tagName)) marca();
 });
 $("b-reset-pid").addEventListener("click", () => enviar({ tipo: "reset_pid" }));
+$("b-salida").addEventListener("click", () => enviar({ tipo: "reiniciar" }));
 $("b-nueva").addEventListener("click", () => {
   if (confirm("¿Cerrar los CSV actuales y empezar una prueba nueva? (reinicia el cronómetro)")) enviar({ tipo: "nueva_prueba" });
 });

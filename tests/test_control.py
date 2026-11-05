@@ -102,3 +102,47 @@ def test_telemetria_manda_datos_y_recibe_parametros():
     assert json.loads(f.readline())["valores"]["kp"] == 0.02
     assert tel.prm["kp"] == 0.02
     cli.close()
+
+
+def test_error_mirada_es_la_columna_de_la_linea_a_distancia_L():
+    p = {"coef": (-0.5, 0.0, 0.0), "z_max": 10.0}  # línea recta 0.5 m a la derecha
+    e, L = fl.error_mirada(p, v=10.0, t_mirar=0.2, z_min=1.0)
+    assert L == pytest.approx(2.0) and e == pytest.approx(fl.F * 0.5 / 2.0)  # 80 px a la derecha
+    _, L = fl.error_mirada(p, v=50.0, t_mirar=1.0, z_min=1.0)
+    assert L == pytest.approx(10.0)  # recortada a lo visible
+    _, L = fl.error_mirada(p, v=1.0, t_mirar=0.1, z_min=1.5)
+    assert L == pytest.approx(1.5)  # mínimo
+    assert fl.error_mirada(p, 10.0, 0.0, 1.0) == (None, 0.0)  # desactivada
+    # Con rumbo: línea centrada ahora pero el coche apunta a la izquierda de ella (c1 < 0)
+    e, _ = fl.error_mirada({"coef": (0.0, -0.1, 0.0), "z_max": 10.0}, 10.0, 0.3, 1.0)
+    assert e > 0  # → girar a la derecha antes de que aparezca error cerca
+
+
+def test_controlador_usa_la_mirada_si_esta_activa():
+    prm = dict(fl.params_por_defecto(), t_mirar=0.2, kp=0.01)
+    ctl = fl.Controlador(prm)
+    p = {"e_px": 0.0, "kappa": 0.0, "kappa_lejos": None, "coef": (-0.5, 0.0, 0.0), "z_max": 10.0}
+    _, w, partes = ctl.paso(p, 0.05)
+    assert partes["e_ctl"] == pytest.approx(80.0) and w == pytest.approx(-0.8)
+
+
+def test_vigilante_sin_linea_y_choque():
+    prm = dict(fl.params_por_defecto(), t_perdida_max=1.0, t_atasco=0.5)
+    vig = fl.Vigilante()
+    sin = {"validos": 0}
+    con = {"validos": 10}
+    assert vig.comprobar(0.0, sin, 10.0, 10.0, prm) is None
+    assert vig.comprobar(0.9, sin, 10.0, 10.0, prm) is None
+    assert vig.comprobar(1.1, sin, 10.0, 10.0, prm) == "sin_linea"
+    vig.limpiar()
+    assert vig.comprobar(2.0, con, 20.0, 3.0, prm) is None  # empieza el atasco
+    assert vig.comprobar(2.6, con, 20.0, 3.0, prm) == "choque"
+    vig.limpiar()
+    assert vig.comprobar(3.0, con, 20.0, 19.0, prm) is None  # va bien
+    assert vig.comprobar(3.0, sin, 20.0, 3.0, dict(prm, reinicio_auto=0.0)) is None
+
+
+def test_elegir_salida():
+    s = fl.SALIDAS["simple"]
+    assert fl.elegir_salida((s[0] + 1.0, s[1], -1.5, 0, 0)) == s  # cerca de la conocida → exacta
+    assert fl.elegir_salida((0.0, 0.0, 1.0, 0, 0)) == (0.0, 0.0, 0.004, 1.0)

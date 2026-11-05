@@ -63,3 +63,5 @@ td.dif { color: var(--acento); }
   background: var(--texto); color: var(--fondo); border-radius: 8px; opacity: 0; transform: translateY(8px);
   transition: opacity .2s, transform .2s; pointer-events: none; }
 #aviso.visible { opacity: 1; transform: none; }
+.opt { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.opt span { color: var(--suave); }

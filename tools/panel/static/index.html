@@ -24,12 +24,14 @@
     <button id="b-pausa" title="Congela las gráficas (se sigue grabando)">Pausar gráficas</button>
     <button id="b-marca" title="Anota el instante en el CSV (tecla M)">Marca (M)</button>
     <button id="b-reset-pid" title="Pone a cero la I y el filtro de D">Reset PID</button>
+    <button id="b-salida" title="Devuelve el coche a la salida (empieza un intento nuevo)">Volver a la salida</button>
     <button id="b-nueva" title="Cierra los CSV y empieza otros; reinicia el cronómetro">Nueva prueba</button>
   </div>
 </header>
 
 <main>
   <aside id="lateral">
+    <section id="optimizador" hidden></section>
     <section>
       <h2>Parámetros <small id="fichero"></small></h2>
       <div id="sliders"><p class="nota">Pulsa play en la web del ejercicio con src/follow_line.py.</p></div>
@@ -66,7 +68,7 @@
       </section>
     </div>
     <section class="tarjeta">
-      <h2>Vueltas <small>* = parámetros cambiados durante la vuelta · clic en una fila carga sus parámetros</small></h2>
+      <h2>Vueltas <small>✓ completa · ✗ choque o salida (reinicio automático) · * = parámetros cambiados durante la vuelta · clic en una fila carga sus parámetros</small></h2>
       <div class="tabla"><table id="tabla"><thead></thead><tbody></tbody></table></div>
     </section>
   </div>

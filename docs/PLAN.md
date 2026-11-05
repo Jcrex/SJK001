@@ -310,6 +310,39 @@ Con los valores por defecto, el controlador es el P de la fase 1 (v = 10, Kp = 0
 
 **Siguiente paso:** fase 3, en la que el usuario sintoniza el PID con el panel. Hay que validar la nueva calibración con una vuelta completa: la curvatura de la gráfica «κ frente a real» debería tener pendiente ≈ 1.
 
+## 5.5 Fase 3 — ajuste manual, oscilaciones y optimizador automático (2026-11-05)
+
+**Resultados del ajuste manual en el panel** (logs `20261105-01*`/`02*_panel_vueltas.csv`):
+
+| Preset | v_max | Kp | Td | N | k_ff | Vuelta | e_rms (px) | Cambios de w/s |
+|---|---|---|---|---|---|---|---|---|
+| P de la fase 1 | 10 | 0.008 | 0 | – | 0 | 43.4 s | 120 | 1.2 |
+| — | 16 | 0.008 | 0.05 | 10 | 0.25 | 27.3 s | 148 | 1.4 |
+| — | 19 | 0.0085 | 0.06 | 10 | 0.35 | 23.0 s | 160 | 3.6 |
+| **v8** | **22** | 0.009 | 0.08 | 13 | 0.4 | **20.2 s** | 221 | 5.0 |
+| v9 | 17 | 0.0085 | 0.18 | 15 | 0.2 | 25.8 s | 196 | 7.4 |
+
+- El tiempo es ≈ 430 m / v. Todo consiste en poder subir v sin perder la línea.
+- **Diagnóstico de la oscilación** (vuelta v8): en recta |D| = 1.68 > |P| = 1.45 y |w| = 2.8 rad/s, así que el coche va en zigzag constante. El 47 % del tiempo |e| > 250 px (la línea casi en el borde) y e_max = 320 en cada vuelta. Con Td = 0.18 (v9) los cambios de signo suben a 7.4/s: la D amplifica.
+- **Causa estructural:** el error se mide en las filas cercanas (0.14–0.2 m del morro) con ~100 ms de retardo. Desde w, ese error es casi un doble integrador (w → rumbo → posición, −180°). Solo la D da adelanto de fase, y lo hace derivando una señal que va a saltos.
+- **La I empeora:** no hay perturbación constante (coche cinemático, sin deslizamiento) y la I solo añade −90° de fase. Ti = 0.
+- **N:** τd = Td/N. Con dt = 50 ms, el filtro solo actúa si τd ≳ dt, es decir, N ≲ Td/dt. En la v8 (Td = 0.08, N = 13) τd = 6 ms y a = 0.11: **el filtro no hace casi nada**. Para filtrar, N ≈ 1–3.
+- **kv_kp:** Kp_ef = Kp/(1 + kv·v). La ganancia del lazo crece con v (y'' = v·w), así que baja Kp a alta velocidad. **Con velocidad constante equivale a usar otro Kp**; solo tiene efecto propio con perfil de velocidad (k_v_curva > 0).
+- **k_ff:** para recorrer una curva κ a v hace falta exactamente w = v·κ, así que k_ff = 1 es el valor teórico si κ es exacta. Pero κ se mide por delante (preview de 0.3 s), y con 1 el coche gira antes de tiempo. De ahí que 0.4 funcione mejor. El optimizador explora 0–1.2.
+
+**Cambios en el controlador:**
+- **Mirada adelantada (`t_mirar`)**, tipo pure pursuit. El error se mide a L = v·t_mirar m por delante sobre la parábola de la línea: e = −F·Y(L)/L px (mismas unidades que antes). Así e ≈ (Y + L·ψ)·F/L incluye el rumbo, lo que añade un cero en s = −1/t_mirar: adelanto de fase geométrico, sin derivar ruido. Con L = v·t, el P equivale a pure pursuit con Kp ≈ 2/(F·t) (t = 0.5 s → Kp ≈ 0.0125). t_mirar = 0 es el comportamiento anterior.
+- **Recuperación automática:** si pasa > t_perdida_max sin línea o la velocidad real cae por debajo del 40 % de la mandada durante t_atasco (choque con la pared), el coche vuelve solo a la salida (`gz service set_pose`) y el panel apunta el intento como fallido (✗). Botón «Volver a la salida» en el panel.
+- Se envía `e_ctl` (el error que usa el PID) y `L` a las gráficas.
+
+**Optimizador automático** (`tools/optimizar.sh`, preparado y **sin ejecutar** todavía sobre el simulador; probado en seco con un controlador falso):
+- Optimización bayesiana con Optuna (TPE multivariante). Cada ensayo es una vuelta desde parado que se lanza a través del panel, así que se ve en directo.
+- J = tiempo + 0.5·e_rms/100 + 0.1·(cambios de w/s). Una vuelta fallida vale 60·(2 − fracción recorrida).
+- Arranca con los presets v8 y v9 y cada 10 ensayos repite el mejor para confirmar.
+- Se guarda en `logs/optuna/` y es reanudable. El mejor se guarda como preset `optuna_<estudio>`.
+- `tools/optimizar.sh --informe` da los mejores ensayos, la importancia de cada parámetro (fANOVA) y las gráficas.
+- Configuración en `tools/optimizador/config.json`: espacio de búsqueda, parámetros fijos, pesos y semillas.
+
 Arranque del entorno:
 ```bash
 docker run -d --rm --name robotics --device /dev/dri --gpus all \
@@ -327,3 +360,4 @@ SJK_V=10 SJK_KP=0.008 tools/vuelta.sh etiqueta 100   # vuelta cronometrada
 | 2026-11-04 | 1 | **43.5 s** limpia (v = 10); techo del P: 22.7 s (v = 20, oscilando) | Banco de pruebas automático `tools/vuelta.sh`, ver 5.2 |
 | 2026-11-04 | 2 (en curso) | 43.4 s (v = 10, mismo P) | Scanlines + κ por círculo (error ≤ 4 %), preview de 0.25–0.35 s. Problema abierto: el coche ignora `w` pequeña a 10 m/s en algunos tramos. Ver 5.3 |
 | 2026-11-05 | 2 → 3 | — | PC nuevo. Bloqueo de giro explicado (fricción de DART alineada con los ejes + pared junto a la salida). Cámara recalibrada (CY = 237.45, H = 0.1015): κ correcta en curvas cerradas. PID del T03 en el controlador y panel de ajuste en vivo (5.4) |
+| 2026-11-05 | 3 | **20.2 s** (v8: v = 22, Kp = 0.009, Td = 0.08, k_ff = 0.4) | Ajuste manual en el panel; oscila mucho a v ≥ 19. Mirada adelantada, recuperación automática y optimizador bayesiano preparados (5.5) |

@@ -1,0 +1,2 @@
+vuelta,tiempo_s,tiempo_reloj_s,distancia_m,v_media,e_abs_medio,e_rms,e_max,perdidos,cambios_w_s,w_abs_medio,params_cambiados,v_max,k_v_curva,v_min,a_sub,a_fren,kp,ti,td,n_filtro,w_max,kv_kp,k_ff,v_perdida
+1,20.9,20.9,432.0,20.95,152.0,190.8,316.0,0,5.02,2.398,1,21.0,0.0,6.0,0.0,0.0,0.01,0.0,0.06,12.0,6.0,0.0,0.35,6.0

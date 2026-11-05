@@ -63,7 +63,15 @@ PARAMS = [
     ("w_max", 6.0, 0.5, 10.0, 0.1, "Giro (PID)", "rad/s, saturación de w (anti-windup)"),
     ("kv_kp", 0.0, 0.0, 0.5, 0.005, "Giro (PID)", "gain scheduling: Kp_ef = Kp / (1 + kv·v)"),
     ("k_ff", 0.0, 0.0, 3.0, 0.05, "Prealimentación", "w_ff = k_ff · v · κ"),
+    ("t_mirar", 0.0, 0.0, 1.5, 0.02, "Mirada adelantada",
+     "s: el error se mide a L = v·t m por delante (pure pursuit). 0 = filas cercanas (fases 1–2)"),
+    ("z_mirar_min", 1.0, 0.2, 6.0, 0.1, "Mirada adelantada", "m, L mínima (a poca velocidad)"),
     ("v_perdida", 1.0, 0.0, 10.0, 0.5, "Otros", "m/s cuando no se ve la línea"),
+    ("reinicio_auto", 1.0, 0.0, 1.0, 1.0, "Recuperación",
+     "1 = si pierde la línea o se atasca, vuelve solo a la salida"),
+    ("t_perdida_max", 1.0, 0.2, 5.0, 0.1, "Recuperación", "s seguidos sin línea → reinicio"),
+    ("t_atasco", 1.0, 0.3, 5.0, 0.1, "Recuperación",
+     "s con velocidad real < 40 % de la mandada (choque) → reinicio"),
 ]
 _ALIAS_ENTORNO = {"v_max": "SJK_V"}  # nombres de las fases 1–2
 
@@ -183,7 +191,8 @@ def percepcion(img_bgr):
     w = FILAS[ok] - CY  # error de Y ∝ 1/(y − CY): pesar más las filas cercanas
     if ok.sum() >= 3:
         c0, c1, c2 = _ajuste(z, y, w)
-        p.update(y0=float(c0), rumbo=float(np.arctan(c1)), kappa=_curvatura(z, y, w, c2))
+        p.update(y0=float(c0), rumbo=float(np.arctan(c1)), kappa=_curvatura(z, y, w, c2),
+                 coef=(float(c0), float(c1), float(c2)))
         lejos = z >= Z_LEJOS
         if lejos.sum() >= 3:
             c2l = _ajuste(z[lejos], y[lejos], w[lejos])[2]
@@ -259,6 +268,23 @@ def rampa(v_ant, v_obj, dt, a_sub, a_fren):
     return v_ant + dv
 
 
+def error_mirada(p, v, t_mirar, z_min):
+    """Error en píxeles medido a L = v·t_mirar m por delante (pure pursuit).
+
+    Es la columna (respecto al centro) donde se ve la línea a esa distancia,
+    sacada de la parábola Y(Z): e = −F·Y(L)/L. Usa las mismas unidades que e_px,
+    así que Kp sirve igual. A diferencia del error de las filas cercanas (casi un
+    doble integrador desde w), este incluye el rumbo: e ≈ (Y + L·ψ)·F/L, lo que
+    añade un cero en s = −v/L = −1/t_mirar, es decir, adelanto de fase sin derivar.
+    L se recorta a [z_min, z_max visible]. Devuelve (e, L), o (None, 0) sin ajuste.
+    """
+    if t_mirar <= 0 or p.get("coef") is None:
+        return None, 0.0
+    L = min(max(v * t_mirar, z_min), max(p["z_max"], 0.2))
+    c0, c1, c2 = p["coef"]
+    return -F * (c0 + c1 * L + c2 * L * L) / L, L
+
+
 class Controlador:
     """Un paso de control por fotograma nuevo. Sin dependencias del simulador."""
 
@@ -273,14 +299,89 @@ class Controlador:
         if p["e_px"] is None:  # línea perdida: despacio y con el último giro
             self.v = prm["v_perdida"]
             self.pid.reset()
-            return self.v, self.w, {"v_ref": self.v, "p": 0.0, "i": 0.0, "d": 0.0, "ff": 0.0}
+            return self.v, self.w, {"v_ref": self.v, "p": 0.0, "i": 0.0, "d": 0.0, "ff": 0.0,
+                                    "e_ctl": None, "L": 0.0}
         v_ref = v_referencia(p["kappa_lejos"], p["kappa"], prm)
         self.v = rampa(self.v if self.v > 0 else v_ref, v_ref, dt, prm["a_sub"], prm["a_fren"])
         kp = prm["kp"] / (1.0 + prm["kv_kp"] * self.v)
         uff = prm["k_ff"] * self.v * p["kappa"]
-        self.w, partes = self.pid.paso(0.0, p["e_px"], dt, kp, prm["ti"], prm["td"],
+        e, L = error_mirada(p, self.v, prm["t_mirar"], prm["z_mirar_min"])
+        if e is None:
+            e = p["e_px"]
+        self.w, partes = self.pid.paso(0.0, e, dt, kp, prm["ti"], prm["td"],
                                        prm["n_filtro"], prm["w_max"], uff)
-        return self.v, self.w, dict(partes, v_ref=v_ref)
+        return self.v, self.w, dict(partes, v_ref=v_ref, e_ctl=e, L=L)
+
+    def reiniciar(self):
+        self.pid.reset()
+        self.v = self.w = 0.0
+
+
+class Vigilante:
+    """Detecta que el coche se ha salido (sin línea) o se ha atascado (choque).
+
+    Atasco: la velocidad real (odometría) es < 40 % de la mandada durante t_atasco,
+    algo que en este coche cinemático solo pasa si hay contacto con la pared.
+    """
+
+    def __init__(self):
+        self.desde_perdida = None
+        self.desde_atasco = None
+
+    def comprobar(self, t, p, v_cmd, vx_real, prm):
+        if prm["reinicio_auto"] < 0.5:
+            return None
+        if p["validos"] == 0:
+            self.desde_perdida = t if self.desde_perdida is None else self.desde_perdida
+            if t - self.desde_perdida > prm["t_perdida_max"]:
+                return "sin_linea"
+        else:
+            self.desde_perdida = None
+        if vx_real is not None and v_cmd > 3.0 and vx_real < 0.4 * v_cmd:
+            self.desde_atasco = t if self.desde_atasco is None else self.desde_atasco
+            if t - self.desde_atasco > prm["t_atasco"]:
+                return "choque"
+        else:
+            self.desde_atasco = None
+        return None
+
+    def limpiar(self):
+        self.desde_perdida = self.desde_atasco = None
+
+
+# Salidas conocidas (x, y, z, yaw): si el coche arranca cerca de una, se usa exacta.
+SALIDAS = {"simple": (53.462, -10.734, 0.004, -1.57)}
+MUNDO_GZ = "default"
+
+
+def elegir_salida(pose_inicial):
+    """Pose a la que volver tras un choque: la salida conocida más cercana (< 3 m)
+    o, si no hay ninguna, la pose en la que arrancó el controlador."""
+    if pose_inicial is None:
+        return SALIDAS["simple"]
+    x, y, yaw = pose_inicial[:3]
+    for s in SALIDAS.values():
+        if (x - s[0]) ** 2 + (y - s[1]) ** 2 < 9.0:
+            return s
+    return (x, y, 0.004, yaw)
+
+
+def volver_a_salida(salida):
+    """Teletransporta el coche con el servicio de Gazebo. Devuelve True si funcionó."""
+    import math
+    import subprocess
+
+    x, y, z, yaw = salida
+    req = (f'name: "f1", position: {{x: {x}, y: {y}, z: {z}}}, '
+           f"orientation: {{z: {math.sin(yaw / 2)}, w: {math.cos(yaw / 2)}}}")
+    try:
+        r = subprocess.run(["gz", "service", "-s", f"/world/{MUNDO_GZ}/set_pose",
+                            "--reqtype", "gz.msgs.Pose", "--reptype", "gz.msgs.Boolean",
+                            "--timeout", "2000", "--req", req],
+                           capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and "true" in r.stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 # --- Telemetría y ajuste en vivo (panel en tools/panel) ----------------------
@@ -291,7 +392,9 @@ class Telemetria:
 
     Mensajes al panel:   {"tipo": "hola", "params": [...]}, {"tipo": "dato", ...},
                          {"tipo": "params", "valores": {...}}
-    Mensajes del panel:  {"tipo": "set", "valores": {...}}, {"tipo": "reset_pid"}
+                         {"tipo": "reinicio", "motivo": ..., "ok": ...}
+    Mensajes del panel:  {"tipo": "set", "valores": {...}}, {"tipo": "reset_pid"},
+                         {"tipo": "reiniciar"} (volver a la salida)
     """
 
     def __init__(self, puerto, prm):
@@ -302,6 +405,7 @@ class Telemetria:
         self.prm = prm  # se sustituye entero (asignación atómica) al cambiar
         self.cola = queue.Queue(maxsize=400)
         self.pedir_reset_pid = False
+        self.pedir_reinicio = False
         self.conectado = False
         self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -369,6 +473,8 @@ class Telemetria:
             cli.sendall((json.dumps({"tipo": "params", "valores": self.prm}) + "\n").encode())
         elif m.get("tipo") == "reset_pid":
             self.pedir_reset_pid = True
+        elif m.get("tipo") == "reiniciar":
+            self.pedir_reinicio = True
 
 
 class Odometria:
@@ -449,6 +555,9 @@ def main():
         print("telemetría desactivada:", ex)
         tel = None
     odom = Odometria()
+    vig = Vigilante()
+    salida = None
+    quieto_hasta = 0.0  # tras un reinicio, unos fotogramas parado mientras llega la imagen nueva
 
     sello_ant = None
     n = n_espera = 0
@@ -468,17 +577,37 @@ def main():
             if tel.pedir_reset_pid:
                 ctl.pid.reset()
                 tel.pedir_reset_pid = False
+        if salida is None and odom.ultimo is not None:
+            salida = elegir_salida(odom.ultimo)
 
         img = HAL.getImage()
         t0 = time.perf_counter()
         p = percepcion(img)
         t_perc = (time.perf_counter() - t0) * 1000
+        o = odom.ultimo
+        motivo = vig.comprobar(st, p, ctl.v, None if o is None else o[3], ctl.prm)
+        if tel and tel.pedir_reinicio:
+            motivo, tel.pedir_reinicio = "pedido", False
+        if motivo:
+            HAL.setV(0.0)
+            HAL.setW(0.0)
+            ok = volver_a_salida(salida or elegir_salida(None))
+            ctl.reiniciar()
+            vig.limpiar()
+            quieto_hasta = st + 0.3
+            print(f"reinicio ({motivo}): {'ok' if ok else 'FALLÓ el servicio de Gazebo'}")
+            if tel:
+                tel.enviar({"tipo": "reinicio", "motivo": motivo, "ok": ok, "t": round(st, 3)})
+            continue
+        if st < quieto_hasta:
+            HAL.setV(0.0)
+            HAL.setW(0.0)
+            continue
         v, w, partes = ctl.paso(p, dt)
         HAL.setV(v)
         HAL.setW(w)
 
         if tel and tel.conectado:
-            o = odom.ultimo
             tel.enviar({
                 "tipo": "dato", "t": round(st, 3), "dt": round(dt, 4),
                 "e": None if p["e_px"] is None else round(p["e_px"], 1),
@@ -490,6 +619,8 @@ def main():
                 "v": round(v, 3), "w": round(w, 4), "v_ref": round(partes["v_ref"], 3),
                 "p": round(partes["p"], 4), "i": round(partes["i"], 4),
                 "d": round(partes["d"], 4), "ff": round(partes["ff"], 4),
+                "e_ctl": None if partes["e_ctl"] is None else round(partes["e_ctl"], 1),
+                "L": round(partes["L"], 2),
                 "x": None if o is None else round(o[0], 3), "y": None if o is None else round(o[1], 3),
                 "yaw": None if o is None else round(o[2], 4),
                 "vx": None if o is None else round(o[3], 3), "wz": None if o is None else round(o[4], 4),

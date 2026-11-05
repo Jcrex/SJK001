@@ -27,11 +27,18 @@ RAIZ = Path(__file__).resolve().parents[2]
 ESTATICOS = Path(__file__).parent / "static"
 PRESETS = Path(__file__).parent / "presets"
 LOGS = RAIZ / "logs"
-HISTORIAL = 2400  # fotogramas que recibe una pestaña nueva (2 min a 20 Hz)
+HISTORIAL = 2400
+CODIGO = [Path(__file__), Path(__file__).parent / "static" / "panel.js"]
+_ARRANQUE = {f: f.stat().st_mtime for f in CODIGO}
+
+
+def codigo_cambiado():
+    """True si se ha editado el panel después de arrancarlo (hay que reiniciarlo)."""
+    return any(f.stat().st_mtime != t for f, t in _ARRANQUE.items())  # fotogramas que recibe una pestaña nueva (2 min a 20 Hz)
 
 COLS_DATO = ["t", "dt", "e", "kappa", "kappa_lejos", "y0", "rumbo", "validos", "z_max", "t_perc",
-             "v", "w", "v_ref", "p", "i", "d", "ff", "x", "y", "yaw", "vx", "wz"]
-COLS_METRICAS = ["vuelta", "tiempo_s", "tiempo_reloj_s", "distancia_m", "v_media", "e_abs_medio",
+             "v", "w", "v_ref", "p", "i", "d", "ff", "e_ctl", "L", "x", "y", "yaw", "vx", "wz"]
+COLS_METRICAS = ["vuelta", "completada", "motivo", "tiempo_s", "tiempo_reloj_s", "distancia_m", "v_media", "e_abs_medio",
                  "e_rms", "e_max", "perdidos", "cambios_w_s", "w_abs_medio", "params_cambiados"]
 R_LEJOS, R_CERCA = 30.0, 2.5
 
@@ -90,11 +97,24 @@ class Vueltas:
             self.lejos = True
         if not (self.lejos and r < R_CERCA):
             return None
+        return self._cerrar(t, params, True, "")
+
+    def fallo(self, motivo, t, params):
+        """El coche se reinició en la salida. Devuelve la fila del intento fallido
+        (None si fue un reinicio pedido o no había empezado a moverse)."""
+        fila = None
+        if motivo != "pedido" and self.t0 is not None and self.dist > 1.0:
+            fila = self._cerrar(t, params, False, motivo)
+        self._nueva(t)
+        return fila
+
+    def _cerrar(self, t, params, completada, motivo):
         self.n += 1
         dur = t - self.t0
         total = self.muestras + self.perdidos
         fila = {
-            "vuelta": self.n, "tiempo_s": round(dur, 2),
+            "vuelta": self.n, "completada": int(completada), "motivo": motivo,
+            "tiempo_s": round(dur, 2),
             "tiempo_reloj_s": round(time.time() - self.t0_reloj, 2),
             "distancia_m": round(self.dist, 1),
             "v_media": round(self.s_v / max(total, 1), 2),
@@ -125,6 +145,7 @@ class Panel:
         # solos cada vez que el controlador se conecta (cada play en la web), y si
         # se eligen sin controlador quedan esperando a que se conecte.
         self.deseados = {}
+        self.opt_estado = None
         self.f_csv = self.f_vueltas = None
 
     # --- ficheros ---------------------------------------------------------
@@ -159,6 +180,7 @@ class Panel:
 
     def msg_estado(self):
         return {"tipo": "estado", "conectado": self.conectado, "fichero": getattr(self, "base", None),
+                "desactualizado": codigo_cambiado(),
                 "presets": sorted(p.stem for p in PRESETS.glob("*.json"))}
 
     async def ws(self, request):
@@ -168,6 +190,8 @@ class Panel:
         await ws.send_str(json.dumps({"tipo": "hola", "params": self.esquema, "valores": self.valores,
                                       "historial": self.historial, "vueltas": self.vueltas_tabla}))
         await ws.send_str(json.dumps(self.msg_estado()))
+        if self.opt_estado:
+            await ws.send_str(json.dumps(self.opt_estado))
         try:
             async for m in ws:
                 if m.type == WSMsgType.TEXT:
@@ -180,8 +204,13 @@ class Panel:
         tipo = m.get("tipo")
         if tipo == "set":
             await self.pedir_params(m.get("valores", {}), "")
-        elif tipo == "reset_pid":
+        elif tipo in ("reset_pid", "reiniciar"):
+            if not self.conectado:
+                await self.difundir({"tipo": "aviso", "texto": "Sin controlador: pulsa play en la web"})
             await self.al_controlador(m)
+        elif tipo == "opt_estado":  # lo manda tools/optimizador; se reenvía a las pestañas
+            self.opt_estado = m
+            await self.difundir(m)
         elif tipo == "marca":
             self.marca = m.get("texto", "marca")
         elif tipo == "nueva_prueba" and self.esquema:
@@ -200,6 +229,9 @@ class Panel:
                 await self.pedir_params(json.loads(f.read_text()), f"preset «{f.stem}» cargado")
             else:
                 await self.difundir({"tipo": "aviso", "texto": f"no existe el preset «{m.get('nombre')}»"})
+        else:
+            await self.difundir({"tipo": "aviso", "texto": f"el panel no conoce la orden «{tipo}»: "
+                                 "¿hay que reiniciarlo (tools/panel.sh)?"})
 
     async def pedir_params(self, cambios, texto):
         """Guarda los parámetros elegidos y se los manda al controlador si está conectado."""
@@ -249,6 +281,18 @@ class Panel:
                 await self.al_controlador({"tipo": "set", "valores": distintos})
                 await self.difundir({"tipo": "aviso", "texto": "parámetros del panel reaplicados: "
                                      + " ".join(f"{k}={v}" for k, v in distintos.items())})
+        elif tipo == "reinicio":
+            fila = self.vueltas.fallo(m["motivo"], m["t"], self.valores)
+            self.marca = "reinicio: " + m["motivo"] + ("" if m.get("ok") else " (FALLÓ)")
+            print(f"[panel] {self.marca}")
+            await self.difundir(m)
+            if not m.get("ok"):
+                await self.difundir({"tipo": "aviso", "texto": "No se pudo devolver el coche a la salida "
+                                     "(servicio de Gazebo). Reinícialo desde la web."})
+            if fila:
+                self.vueltas_tabla.append(fila)
+                self.csv_vueltas.writerow(fila)
+                await self.difundir({"tipo": "vuelta", "fila": fila})
         elif tipo == "params":
             if m["valores"] != self.valores:
                 self.vueltas.cambio_params = True

@@ -1,0 +1,2 @@
+vuelta,completada,motivo,tiempo_s,tiempo_reloj_s,distancia_m,v_media,e_abs_medio,e_rms,e_max,perdidos,cambios_w_s,w_abs_medio,params_cambiados,v_max,k_v_curva,v_min,a_sub,a_fren,kp,ti,td,n_filtro,w_max,kv_kp,k_ff,t_mirar,z_mirar_min,v_perdida,reinicio_auto,t_perdida_max,t_atasco
+1,0,choque,5.2,5.31,81.7,19.86,151.7,202.6,319.0,13,1.54,2.255,0,22.0,0.0,6.0,0.0,0.0,0.01,0.0,0.06,12.0,6.0,0.0,0.35,0.0,1.0,6.0,1.0,1.0,1.0
