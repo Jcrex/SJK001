@@ -37,7 +37,7 @@ def codigo_cambiado():
     return any(f.stat().st_mtime != t for f, t in _ARRANQUE.items())  # fotogramas que recibe una pestaña nueva (2 min a 20 Hz)
 
 COLS_DATO = ["t", "dt", "e", "kappa", "kappa_lejos", "y0", "rumbo", "validos", "z_max", "t_perc",
-             "v", "w", "v_ref", "p", "i", "d", "ff", "e_ctl", "L", "x", "y", "yaw", "vx", "wz"]
+             "v", "w", "v_ref", "p", "i", "d", "ff", "hor", "e_hor", "n_hor", "e_ctl", "L", "x", "y", "yaw", "vx", "wz"]
 COLS_METRICAS = ["vuelta", "completada", "motivo", "tiempo_s", "tiempo_reloj_s", "distancia_m", "v_media", "e_abs_medio",
                  "e_rms", "e_max", "perdidos", "cambios_w_s", "w_abs_medio", "params_cambiados"]
 R_LEJOS, R_CERCA = 30.0, 2.5

@@ -105,3 +105,23 @@ def test_sin_linea():
     p = fl.percepcion(np.full((480, 640, 3), 50, np.uint8))
     assert p["e_px"] is None
     assert p["validos"] == 0
+
+
+# --- banda del horizonte ------------------------------------------------------
+def test_banda_horizonte_ve_la_curva_antes():
+    p = fl.percepcion(pista_sintetica(radio=20.0))  # curva a la izquierda que empieza lejos
+    assert p["n_hor"] >= 5 and p["e_hor"] < -20  # línea a la izquierda en el horizonte
+    assert abs(p["e_px"]) < 5  # cerca aún va recta: solo el horizonte la anticipa
+    p = fl.percepcion(pista_sintetica(radio=-20.0))
+    assert p["e_hor"] > 20
+    assert fl.percepcion(pista_sintetica())["e_hor"] == pytest.approx(0.0, abs=2)
+
+
+def test_banda_horizonte_ignora_otro_tramo_y_se_puede_mover():
+    img = pista_sintetica()
+    img[242, 20:60] = ROJO_BGR  # otro trozo del circuito asomando
+    p = fl.percepcion(img)
+    assert p["e_hor"] == pytest.approx(0.0, abs=2)
+    p = fl.percepcion(img, fila_hor=245, n_filas_hor=3)
+    assert list(p["filas_hor"]) == [245, 246, 247]
+    assert fl.percepcion(np.full((480, 640, 3), 50, np.uint8))["e_hor"] is None

@@ -146,3 +146,11 @@ def test_elegir_salida():
     s = fl.SALIDAS["simple"]
     assert fl.elegir_salida((s[0] + 1.0, s[1], -1.5, 0, 0)) == s  # cerca de la conocida → exacta
     assert fl.elegir_salida((0.0, 0.0, 1.0, 0, 0)) == (0.0, 0.0, 0.004, 1.0)
+
+
+def test_horizonte_gira_hacia_la_curva_y_cero_lo_desactiva():
+    p = {"e_px": 0.0, "kappa": 0.0, "kappa_lejos": None, "e_hor": -50.0}  # curva a la izquierda
+    _, w, partes = fl.Controlador(dict(fl.params_por_defecto(), k_hor=0.01)).paso(p, 0.05)
+    assert w == pytest.approx(0.5) and partes["hor"] == pytest.approx(0.5) and partes["ff"] == 0.0
+    _, w, _ = fl.Controlador().paso(p, 0.05)
+    assert w == 0.0

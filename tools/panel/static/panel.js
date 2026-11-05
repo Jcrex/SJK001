@@ -9,11 +9,11 @@ const MAX_PUNTOS = 3000;
 // --- Gráficas -----------------------------------------------------------------
 // [clave, etiqueta, color, ancho, discontinua]
 const GRAFICAS = [
-  { titulo: "Error lateral (px) · + = línea a la derecha · e = filas cercanas, e_ctl = el que usa el PID", series: [
-    ["e", "e", "#2f6fde", 1.4], ["e_ctl", "e_ctl", "#d97706", 1.4], ["L", "L mirada (m)", "#16a34a", 1, true]] },
+  { titulo: "Error lateral (px) · + = línea a la derecha · e = filas cercanas, e_ctl = el que usa el PID, e_hor = banda del horizonte", series: [
+    ["e", "e", "#2f6fde", 1.4], ["e_ctl", "e_ctl", "#d97706", 1.4], ["e_hor", "e_hor (horizonte)", "#0891b2", 1.2], ["L", "L mirada (m)", "#16a34a", 1, true]] },
   { titulo: "Giro (rad/s) · w mandada y sus partes; wz = giro real (odometría)", series: [
     ["w", "w", "#111827", 1.8], ["p", "P", "#2f6fde", 1], ["i", "I", "#d97706", 1],
-    ["d", "D", "#16a34a", 1], ["ff", "FF", "#9333ea", 1], ["wz", "wz real", "#dc2626", 1.2, true]] },
+    ["d", "D", "#16a34a", 1], ["ff", "FF", "#9333ea", 1], ["hor", "HOR", "#0891b2", 1], ["wz", "wz real", "#dc2626", 1.2, true]] },
   { titulo: "Velocidad (m/s)", series: [
     ["v", "v", "#2f6fde", 1.6], ["v_ref", "v_ref", "#d97706", 1, true], ["vx", "vx real", "#dc2626", 1, true]] },
   { titulo: "Curvatura (1/m) · cámara frente a la recorrida (wz/vx)", series: [

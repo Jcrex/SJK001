@@ -41,6 +41,11 @@ FILAS_CERCA = FILAS >= 390  # filas que dan el error de posición actual
 Z_LEJOS = 1.5  # m: a partir de aquí los puntos cuentan para κ_lejos
 K_RECTA = 0.02  # 1/m: |κ| por debajo → recta (radio > 50 m)
 
+# Banda del horizonte: n filas seguidas desde la primera en la que se ve el suelo
+# (la cámara corta a 15 m, fila ≈ 239.6). Ahí la curva se ve antes que en ningún
+# otro sitio: la columna media de la línea en la banda dice hacia dónde gira la pista.
+SALTO_HOR = 50  # px: salto máx. de la línea entre filas de la banda (evita otros tramos)
+
 ROJO_BAJO = ((0, 100, 60), (10, 255, 255))
 ROJO_ALTO = ((170, 100, 60), (180, 255, 255))
 
@@ -66,6 +71,10 @@ PARAMS = [
     ("t_mirar", 0.0, 0.0, 1.5, 0.02, "Mirada adelantada",
      "s: el error se mide a L = v·t m por delante (pure pursuit). 0 = filas cercanas (fases 1–2)"),
     ("z_mirar_min", 1.0, 0.2, 6.0, 0.1, "Mirada adelantada", "m, L mínima (a poca velocidad)"),
+    ("k_hor", 0.0, 0.0, 0.03, 0.0005, "Horizonte",
+     "rad/s por px: w_hor = −k_hor·e_hor, gira hacia donde va la línea en el horizonte. 0 = desactivado"),
+    ("fila_hor", 240.0, 236.0, 300.0, 1.0, "Horizonte", "primera fila de la banda (la del horizonte)"),
+    ("n_filas_hor", 10.0, 1.0, 40.0, 1.0, "Horizonte", "filas de la banda (azul en la imagen)"),
     ("v_perdida", 1.0, 0.0, 10.0, 0.5, "Otros", "m/s cuando no se ve la línea"),
     ("reinicio_auto", 1.0, 0.0, 1.0, 1.0, "Recuperación",
      "1 = si pierde la línea o se atasca, vuelve solo a la salida"),
@@ -150,6 +159,32 @@ def centros_filas(img_bgr, filas=FILAS):
     return xs
 
 
+def banda_horizonte(img_bgr, xs, fila, n):
+    """Columna de la línea en cada fila de la banda [fila, fila + n).
+
+    Se sigue la línea de abajo arriba desde el último punto de las scanlines que
+    queda por debajo de la banda, como en centros_filas, y se descarta un tramo si
+    salta más de SALTO_HOR px respecto a la fila anterior: así no se coge otro trozo
+    del circuito que asome por el horizonte. Devuelve (filas, xs_banda).
+    """
+    filas = np.arange(int(fila), min(int(fila) + int(n), ALTO))
+    xb = np.full(len(filas), np.nan)
+    if filas.size == 0:
+        return filas, xb
+    debajo = np.isfinite(xs) & (FILAS >= filas[-1])
+    if not debajo.any():
+        return filas, xb
+    esperado = xs[debajo][-1]  # FILAS va de cerca a lejos: el último es el más alto
+    mask = mascara_rojo(img_bgr[filas])
+    for i in range(len(filas) - 1, -1, -1):
+        c = _tramos(mask[i])
+        if c.size:
+            j = np.argmin(np.abs(c - esperado))
+            if abs(c[j] - esperado) <= SALTO_HOR:
+                xb[i] = esperado = c[j]
+    return filas, xb
+
+
 def _ajuste(z, y, w):
     """Parábola Y = c0 + c1·Z + c2·Z² → (c0, c1, c2). Da posición y rumbo."""
     c2, c1, c0 = np.polyfit(z, y, 2, w=w)
@@ -173,12 +208,16 @@ def _curvatura(z, y, w, signo):
     return float(np.sign(signo) * abs(2 * A) / np.sqrt(disc) / s)
 
 
-def percepcion(img_bgr):
+def percepcion(img_bgr, fila_hor=240, n_filas_hor=10):
     """Todo lo que el control necesita de un fotograma."""
     xs = centros_filas(img_bgr)
     ok = np.isfinite(xs)
+    filas_hor, xs_hor = banda_horizonte(img_bgr, xs, fila_hor, n_filas_hor)
+    ok_hor = np.isfinite(xs_hor)
     p = {"xs": xs, "validos": int(ok.sum()), "e_px": None, "y0": None, "rumbo": None,
-         "kappa": 0.0, "kappa_lejos": None, "recta": True, "z_max": 0.0}
+         "kappa": 0.0, "kappa_lejos": None, "recta": True, "z_max": 0.0,
+         "filas_hor": filas_hor, "xs_hor": xs_hor, "n_hor": int(ok_hor.sum()),
+         "e_hor": float(xs_hor[ok_hor].mean() - CX) if ok_hor.any() else None}
     if not ok.any():
         return p
 
@@ -299,18 +338,20 @@ class Controlador:
         if p["e_px"] is None:  # línea perdida: despacio y con el último giro
             self.v = prm["v_perdida"]
             self.pid.reset()
-            return self.v, self.w, {"v_ref": self.v, "p": 0.0, "i": 0.0, "d": 0.0, "ff": 0.0,
+            return self.v, self.w, {"v_ref": self.v, "p": 0.0, "i": 0.0, "d": 0.0, "ff": 0.0, "hor": 0.0,
                                     "e_ctl": None, "L": 0.0}
         v_ref = v_referencia(p["kappa_lejos"], p["kappa"], prm)
         self.v = rampa(self.v if self.v > 0 else v_ref, v_ref, dt, prm["a_sub"], prm["a_fren"])
         kp = prm["kp"] / (1.0 + prm["kv_kp"] * self.v)
         uff = prm["k_ff"] * self.v * p["kappa"]
+        e_hor = p.get("e_hor")
+        u_hor = 0.0 if e_hor is None else -prm["k_hor"] * e_hor
         e, L = error_mirada(p, self.v, prm["t_mirar"], prm["z_mirar_min"])
         if e is None:
             e = p["e_px"]
         self.w, partes = self.pid.paso(0.0, e, dt, kp, prm["ti"], prm["td"],
-                                       prm["n_filtro"], prm["w_max"], uff)
-        return self.v, self.w, dict(partes, v_ref=v_ref, e_ctl=e, L=L)
+                                       prm["n_filtro"], prm["w_max"], uff + u_hor)
+        return self.v, self.w, dict(partes, ff=uff, hor=u_hor, v_ref=v_ref, e_ctl=e, L=L)
 
     def reiniciar(self):
         self.pid.reset()
@@ -511,6 +552,18 @@ class Odometria:
 # --- Visualización ----------------------------------------------------------
 def dibujar(img, p, v, w):
     vis = img.copy()
+    f = p.get("filas_hor")
+    if f is not None and f.size:  # banda del horizonte en azul transparente
+        tramo = vis[f[0]:f[-1] + 1]
+        azul = np.zeros_like(tramo)
+        azul[:] = (255, 0, 0)
+        vis[f[0]:f[-1] + 1] = cv2.addWeighted(tramo, 0.55, azul, 0.45, 0)
+        for x, y in zip(p["xs_hor"], f):
+            if np.isfinite(x):
+                cv2.circle(vis, (int(x), int(y)), 2, (255, 255, 0), -1)
+        if p["e_hor"] is not None:  # columna media: hacia dónde va la pista
+            xm = int(CX + p["e_hor"])
+            cv2.line(vis, (xm, f[0] - 12), (xm, f[-1] + 12), (255, 255, 0), 2)
     for x, y in zip(p["xs"], FILAS):
         if np.isfinite(x):
             cv2.circle(vis, (int(x), int(y)), 3 if y < 300 else 6, (0, 255, 0), -1)
@@ -521,6 +574,8 @@ def dibujar(img, p, v, w):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     cv2.putText(vis, f"v={v:.1f} w={w:+.2f}  puntos={p['validos']} zmax={p['z_max']:.1f} m", (10, 50),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    eh = "-" if p.get("e_hor") is None else f"{p['e_hor']:+.0f} px ({p['n_hor']} filas)"
+    cv2.putText(vis, f"horizonte: {eh}", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
     return vis
 
 
@@ -582,7 +637,7 @@ def main():
 
         img = HAL.getImage()
         t0 = time.perf_counter()
-        p = percepcion(img)
+        p = percepcion(img, ctl.prm["fila_hor"], ctl.prm["n_filas_hor"])
         t_perc = (time.perf_counter() - t0) * 1000
         o = odom.ultimo
         motivo = vig.comprobar(st, p, ctl.v, None if o is None else o[3], ctl.prm)
@@ -618,7 +673,8 @@ def main():
                 "validos": p["validos"], "z_max": round(p["z_max"], 2), "t_perc": round(t_perc, 3),
                 "v": round(v, 3), "w": round(w, 4), "v_ref": round(partes["v_ref"], 3),
                 "p": round(partes["p"], 4), "i": round(partes["i"], 4),
-                "d": round(partes["d"], 4), "ff": round(partes["ff"], 4),
+                "d": round(partes["d"], 4), "ff": round(partes["ff"], 4), "hor": round(partes["hor"], 4),
+                "e_hor": None if p["e_hor"] is None else round(p["e_hor"], 1), "n_hor": p["n_hor"],
                 "e_ctl": None if partes["e_ctl"] is None else round(partes["e_ctl"], 1),
                 "L": round(partes["L"], 2),
                 "x": None if o is None else round(o[0], 3), "y": None if o is None else round(o[1], 3),

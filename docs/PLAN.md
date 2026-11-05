@@ -351,6 +351,27 @@ tools/test.sh                                  # pruebas
 SJK_V=10 SJK_KP=0.008 tools/vuelta.sh etiqueta 100   # vuelta cronometrada
 ```
 
+### 5.6 Banda del horizonte (2026-11-05, por probar en el simulador)
+
+Idea: en las curvas, los puntos más altos de la línea ya muestran hacia dónde gira la
+pista antes de que el error cercano cambie. Se usa una banda de `n_filas_hor` filas
+(10 por defecto) que empieza en `fila_hor` (240, la primera con suelo visible; la
+cámara corta a 15 m en la fila ≈ 239.6). En cada fila de la banda se busca la línea,
+siguiéndola desde la última scanline de abajo y descartando saltos > 50 px. La
+columna media respecto al centro es `e_hor`. Término de control (prealimentación,
+fuera de la D y saturado con el resto en `w_max`):
+
+    w_hor = −k_hor · e_hor        (k_hor = 0 → desactivado, comportamiento de antes)
+
+En la imagen de la web, la banda se pinta en azul transparente, los puntos de la banda
+en cian y la columna media con una raya cian. En el panel, `e_hor` aparece en la
+gráfica de error y `HOR` en la de giro. Medido con 35 fotogramas reales: en la
+entrada de una curva, `e_px` ≈ +8 px mientras `e_hor` ≈ −174 px (curva a la
+izquierda); en recta, |e_hor| < 10 px; coste de +0.2 ms por fotograma.
+Límite conocido: si el coche va muy torcido y la línea se sale por el lateral de la
+imagen, las scanlines lejanas (y con ellas la banda) pueden saltar a otro tramo del
+circuito que asome por el horizonte.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
