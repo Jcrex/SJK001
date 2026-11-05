@@ -7,7 +7,7 @@ Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 
 | Control P (fase 1, v = 10 m/s) | 43.4 s |
 | PID ajustado a mano (v = 22) | 20.2 s |
 | + banda del horizonte + optimizador | 15.1 s |
-| Optimizador con ventana móvil (v ≈ 54, 3 de 3 vueltas limpias) | **9.4 s** |
+| Optimizador con ventana móvil y mejores por repeticiones (v ≈ 56, 3 de 3 vueltas) | **9.25 s** |
 
 El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -142,13 +142,13 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 - La **ventana de búsqueda se desplaza sola** cuando los mejores ensayos se acercan a un borde, así que no hay techo para ningún parámetro.
 - Cada 10 ensayos **repite uno de los mejores** para comprobar que no fue suerte. Los mejores se ordenan por la **J media de todas sus repeticiones**: un choque cuenta ~75, así que unos parámetros que completan 2 de 24 vueltas ya no pasan por buenos por una vuelta con suerte.
 
-`tools/optimizar.sh --informe` genera estas gráficas (las de abajo son del estudio `simple_v3_g5`, 842 ensayos):
+`tools/optimizar.sh --informe` genera estas gráficas (las de abajo son del estudio `simple_v3_g6`, 1176 ensayos):
 
 | | |
 |---|---|
 | ![Historia](docs/img/optuna_historia.png) | **Historia.** J de cada ensayo y el mejor hasta el momento. Cada escalón de la línea negra es una mejora. Que sigan apareciendo escalones tras cientos de ensayos indica que mover la ventana de `v_max` hacia arriba sigue dando mejoras. |
-| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA).** Cuánto explica cada parámetro de la variación de J. Ahora mandan `v_max` (0.18), `t_mirar` (0.17) y `k_hor` (0.14): velocidad y anticipación. La I ni aparece, y `kv_kp` y `n_filtro` apenas cuentan. |
-| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** Dónde está la zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas). Se ve que más `v_max` y `t_mirar` ≈ 0.2 s bajan J, y que `k_ff` funciona mejor hacia 0.7. |
+| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA).** Cuánto explica cada parámetro de la variación de J. Al final mandan `v_max` (0.21), `k_ff`, `k_v_curva` y `v_min` (≈ 0.15 cada uno): con la anticipación ya ajustada, lo que decide el tiempo es cuánto frenar en las curvas. `kv_kp` y `n_filtro` apenas cuentan y la I ni aparece. |
+| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** Dónde está la zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas). Se ve que J baja con más `v_max` hasta ≈ 56 y que `k_ff` funciona mejor hacia 0.75. |
 | ![Tiempo frente a oscilación](docs/img/optuna_tiempo_vs_osc.png) | **Tiempo frente a oscilación.** El compromiso entre ir rápido y no hacer zigzag; abajo a la izquierda es mejor. |
 
 ### 3.3 Análisis fuera de línea
@@ -159,12 +159,17 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 
 ---
 
-## 4. Mejores parámetros (en curso)
+## 4. Mejores parámetros
 
-Ensayo #828 de `simple_v3_g5`: **9.4 s**, 6 de 7 vueltas completas (9.4–9.45 s).
+Ensayo #1054 de `simple_v3_g6`: **9.25–9.3 s en 3 de 3 vueltas** (J media 10.61), guardado como preset `optuna_simple_v3`. Hay otros 6 grupos de parámetros muy parecidos con 3/3 vueltas entre 9.25 y 9.4 s.
 
 | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 56.4 | 6.51 | 10.8 | 0.00771 | 0.0836 | 15.2 | 0.765 | 0.023 | 0.175 | 0.316 | 0.0455 | 6 | 0 |
+
+El límite de rendimiento es la cámara (20 Hz, un fotograma cada 50 ms), no el cálculo: la percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (ver `docs/PLAN.md` §5.8).
+
+---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 54.5 | 5.39 | 10.9 | 0.00855 | 0.102 | 12.3 | 0.719 | 0.0058 | 0.197 | 0.45 | 0.054 | 6 | 0 |
 
 ---

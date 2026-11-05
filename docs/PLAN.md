@@ -407,6 +407,56 @@ circuito que asome por el horizonte.
 - **Protección:** si los parámetros cambian durante un ensayo, o se pulsa «Volver a la
   salida», el ensayo se descarta (`interferencia`) en vez de guardarse con datos falsos.
 
+### 5.8 Resultados de simple_v3 y estado al cerrar la sesión (2026-11-05)
+
+**Entrenamiento:** `simple_v3`, de 13:30 a 18:30 aprox., terminó en la generación `g6` con 1176 ensayos
+(627 vueltas completas). La ventana se desplazó 6 veces:
+
+| Gen. | Motivo | Cambio |
+|---|---|---|
+| g1, g2 | pedido desde el panel | k_hor → 0–0.18 → 0–0.96 |
+| g3–g6 | los mejores estaban en el borde | v_max 16–40 → 22–46 → 28–52 → 34–58 → 40–64 |
+
+- **Mejor fiable: 9.25–9.3 s en 3 de 3 vueltas** (#1054, J media 10.61; guardado como preset
+  `optuna_simple_v3`): v_max = 56.4, k_v_curva = 6.51, v_min = 10.8, kp = 0.00771, td = 0.0836,
+  n_filtro = 15.2, k_ff = 0.765, kv_kp = 0.023, t_mirar = 0.175, z_mirar_min = 0.316, k_hor = 0.0455
+  (w_max = 6, ti = 0). Hay 7 grupos de parámetros con 3/3 vueltas entre 9.25 y 9.4 s, todos muy
+  parecidos: la zona buena está bien localizada.
+- **v_max se ha estabilizado en ≈ 55–57** con la ventana en 40–64: los mejores ya no están en el borde,
+  así que el límite ya no es la ventana sino el circuito (frenar en las curvas).
+- **Importancia (fANOVA) al final:** v_max 0.21, k_ff 0.15, k_v_curva 0.15, v_min 0.14, z_mirar_min 0.09,
+  td 0.09; t_mirar, kp y k_hor ≈ 0.04–0.05. Al principio de g5 mandaban v_max, t_mirar y k_hor. Ahora, con
+  la anticipación ya ajustada, lo que más mueve J es **el perfil de velocidad** (cuánto frenar en curva)
+  y la prealimentación.
+- k_hor terminó en ≈ 0.045–0.055, unas 6 veces el 0.008 de la vuelta de 15.1 s. Los valores grandes
+  (hasta 0.96, pedidos desde el panel para probar) fallaban.
+
+**Corrección del optimizador: mejores por repeticiones.** Con el mejor como mejor vuelta suelta, el #595
+(9.35 s) se confirmó 24 veces y solo completó 2. Desde el commit 43139c8 los grupos de parámetros se ordenan
+por la J media de todas sus repeticiones (ver 5.7). Tras el cambio, las confirmaciones dejaron 8 grupos
+3/3 en ~270 ensayos, frente a uno solo antes.
+
+**Estudio de rendimiento: ¿pasar el controlador a C++?** No compensa. Medido en el log de la sesión
+(23 841 fotogramas): dt = 50 ms en el 99 % (la cámara está fijada a 20 Hz en `f1_gz.urdf.xacro`) y
+no se pierde ningún fotograma. La percepción tarda 1.25 ms de media (0.78 ms en banco), el control
+≈ 0 y dibujar para la web 1.2 ms, pero después de mandar v y w. C++ ahorraría ≈ 1 ms de retardo
+(≈ 4 cm a 45 m/s, frente a 2.25 m entre fotogramas). El simulador sí acepta C++ (colcon, paquete `academy`),
+pero sin HAL ni WebGUI habría que reescribir la cámara, los comandos, la imagen web, el reinicio y la
+telemetría. **El cuello de botella es la cámara a 20 Hz**, que es parte del ejercicio. Revisar solo si
+t_perc se acerca a 50 ms o aparecen dt de 0.1 s.
+
+**Otros cambios de la sesión:** `.gitignore` (logs, estudios y presets generados fuera del repo);
+README con la ecuación de control completa en LaTeX, el diagrama del lazo (`docs/img/lazo_control.svg`)
+y las gráficas del optimizador (`docs/img/optuna_*.png`, copiadas del informe de `simple_v3_g6`).
+
+**Siguiente paso propuesto:**
+1. Comprobar a mano el preset `optuna_simple_v3` desde la web y ver la vuelta.
+2. Como ahora lo que más pesa es el perfil de velocidad, se puede liberar `a_sub` y `a_fren` (fijos a 0,
+   sin límite) o `w_max` en un estudio nuevo que importe `simple_v3_g6`.
+3. En las gráficas de cortes, J sigue bajando hacia `v_min` ≈ 9.5 y `z_mirar_min` ≈ 0.2 (borde inferior
+   de sus ventanas). La ventana móvil los bajará sola si se sigue entrenando.
+4. Probar en otros circuitos para ver si generaliza: la ventana y el preset están afinados para `simple`.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -418,3 +468,5 @@ circuito que asome por el horizonte.
 | 2026-11-05 | 2 → 3 | — | PC nuevo. Bloqueo de giro explicado (fricción de DART alineada con los ejes + pared junto a la salida). Cámara recalibrada (CY = 237.45, H = 0.1015): κ correcta en curvas cerradas. PID del T03 en el controlador y panel de ajuste en vivo (5.4) |
 | 2026-11-05 | 3 | **20.2 s** (v8: v = 22, Kp = 0.009, Td = 0.08, k_ff = 0.4) | Ajuste manual en el panel; oscila mucho a v ≥ 19. Mirada adelantada, recuperación automática y optimizador bayesiano preparados (5.5) |
 | 2026-11-05 | 3 | **15.1 s** (v = 30, k_hor = 0.008, Kp = 0.0096, Td = 0.111, N = 14.8, k_ff = 0.46) | Banda del horizonte + optimizador con ensayos manuales en caliente (simple_v2). Rangos ampliados en simple_v3 (5.7) |
+| 2026-11-05 | 3 | 9.4 s (#828, v ≈ 54.5, 6/7 vueltas) | Sin techo en el controlador y ventana móvil: v_max sube por generaciones (g3–g5). Detectado que el «mejor» era una vuelta con suerte (#595, 2/24) (5.7) |
+| 2026-11-05 | 3 | **9.25 s, 3 de 3 vueltas** (#1054: v_max = 56.4, kp = 0.0077, td = 0.084, k_ff = 0.77, k_hor = 0.046, t_mirar = 0.18) | Mejores por J media de las repeticiones. Optimizador parado en simple_v3_g6 (1176 ensayos). C++ descartado: el límite es la cámara a 20 Hz. README con la ecuación y el diagrama (5.8) |
