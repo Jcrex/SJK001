@@ -55,7 +55,7 @@ ROJO_ALTO = ((170, 100, 60), (180, 255, 255))
 # Un parámetro se puede fijar también con la variable de entorno SJK_<NOMBRE>.
 # Con los valores por defecto el controlador es el P de las fases 1–2.
 PARAMS = [
-    ("v_max", 10.0, 1.0, 30.0, 0.5, "Velocidad", "m/s en recta"),
+    ("v_max", 10.0, 1.0, 40.0, 0.5, "Velocidad", "m/s en recta"),
     ("k_v_curva", 0.0, 0.0, 200.0, 1.0, "Velocidad",
      "v_ref = v_max / (1 + k·|κ_lejos|). 0 = velocidad constante"),
     ("v_min", 4.0, 1.0, 20.0, 0.5, "Velocidad", "m/s mínima del perfil de velocidad"),
@@ -83,6 +83,10 @@ PARAMS = [
      "s con velocidad real < 40 % de la mandada (choque) → reinicio"),
 ]
 _ALIAS_ENTORNO = {"v_max": "SJK_V"}  # nombres de las fases 1–2
+# El máximo de PARAMS es solo el recorrido inicial del slider: no se recorta por arriba,
+# para poder explorar sin techo (el optimizador desplaza su ventana). Solo estos
+# parámetros tienen un máximo de verdad. El mínimo sí se respeta siempre.
+TOPE_DURO = {"reinicio_auto"}
 
 
 def params_por_defecto():
@@ -94,12 +98,14 @@ def params_por_defecto():
 
 
 def ajustar_params(actual, cambios):
-    """Aplica cambios {nombre: valor} recortados a su rango; ignora nombres desconocidos."""
+    """Aplica cambios {nombre: valor}: recorta al mínimo (y al máximo solo los de
+    TOPE_DURO); ignora nombres desconocidos."""
     rangos = {p[0]: (p[2], p[3]) for p in PARAMS}
     nuevo = dict(actual)
     for k, v in cambios.items():
         if k in rangos:
-            nuevo[k] = min(max(float(v), rangos[k][0]), rangos[k][1])
+            v = max(float(v), rangos[k][0])
+            nuevo[k] = min(v, rangos[k][1]) if k in TOPE_DURO else v
     return nuevo
 
 
@@ -462,7 +468,8 @@ class Telemetria:
                 pass
 
     def _hola(self):
-        esquema = [dict(nombre=n, defecto=d, min=lo, max=hi, paso=st, grupo=g, desc=ds)
+        esquema = [dict(nombre=n, defecto=d, min=lo, max=hi, paso=st, grupo=g, desc=ds,
+                        tope_duro=n in TOPE_DURO)
                    for n, d, lo, hi, st, g, ds in PARAMS]
         return {"tipo": "hola", "params": esquema, "valores": self.prm}
 

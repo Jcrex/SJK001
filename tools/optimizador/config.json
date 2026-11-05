@@ -1,22 +1,23 @@
 {
   "_ayuda": "Configuración del optimizador (tools/optimizar.sh). Las claves que empiezan por _ son comentarios.",
 
-  "estudio": "simple_v1",
+  "estudio": "simple_v3",
   "_estudio": "Nombre del estudio. Se guarda en logs/optuna/<estudio>.db y se puede parar y reanudar. Cámbialo para empezar de cero.",
 
   "panel": "ws://127.0.0.1:8050/ws",
 
   "espacio": {
-    "v_max":       [16.0, 30.0],
+    "v_max":       [16.0, 40.0],
     "k_v_curva":   [0.0, 120.0],
     "v_min":       [8.0, 20.0],
     "kp":          [0.003, 0.02],
-    "td":          [0.0, 0.12],
-    "n_filtro":    [1.0, 15.0],
+    "td":          [0.0, 0.25],
+    "n_filtro":    [1.0, 30.0],
     "k_ff":        [0.0, 1.2],
     "kv_kp":       [0.0, 0.15],
     "t_mirar":     [0.0, 0.8],
-    "z_mirar_min": [0.5, 4.0]
+    "z_mirar_min": [0.2, 4.0],
+    "k_hor":       [0.0, 0.02]
   },
   "_espacio": "Parámetros que el optimizador puede mover, con su rango [mín, máx]. Quita una línea para dejarlo fijo.",
 
@@ -31,6 +32,16 @@
     "t_atasco": 0.7
   },
   "_fijos": "Valores que se mandan en todos los ensayos. Ti = 0 porque la I solo añade retardo (no hay perturbación constante que corregir).",
+
+  "importar": {
+    "de": ["simple_v2"],
+    "valores_previos": {},
+    "probar_nuevos": {"k_hor": [0.011, 0.014, 0.018], "v_max": [32.0, 35.0], "n_filtro": [20.0]}
+  },
+  "_importar": "Solo al crear el estudio: copia los ensayos de los estudios de «de» para no perder lo aprendido. Un parámetro nuevo del espacio toma en ellos su valor de «valores_previos» (el que tenía de verdad: k_hor = 0 porque no existía). J se recalcula con el objetivo actual. «probar_nuevos» pone en cola el mejor ensayo importado con esos valores, para que el modelo vea si el parámetro nuevo ayuda. Para añadir otro parámetro más adelante: estudio nuevo, añadirlo al espacio y a valores_previos, e importar del estudio anterior.",
+
+  "ventana_movil": {"activa": true, "cada": 10, "top": 10, "umbral": 0.1, "paso": 0.25},
+  "_ventana_movil": "Los rangos de «espacio» son una ventana que se desplaza sola. Cada «cada» ensayos se miran los «top» mejores: si la mitad están a menos de umbral·ancho de un borde, la ventana de ese parámetro se desplaza paso·ancho hacia ese lado, sin dejar fuera a los mejores y sin bajar del mínimo del controlador. También se desplaza si desde el panel pides un valor de fuera. Cada desplazamiento crea una generación nueva del estudio (<estudio>_g1, _g2...) que importa todos los ensayos que caen dentro; el estado está en logs/optuna/<estudio>_ventana.json. Si cambias a mano un rango aquí, al arrancar se usa el tuyo.",
 
   "semillas": ["PruebaconFPIDv8", "PruebaconFPIDv9"],
   "_semillas": "Presets de tools/panel/presets que se prueban primero, para que el modelo arranque desde lo que ya funciona.",

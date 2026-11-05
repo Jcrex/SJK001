@@ -177,10 +177,10 @@ function crearSliders() {
     const div = document.createElement("div");
     div.className = "param";
     div.id = "p-" + p.nombre;
-    div.title = `${p.desc}\nrango ${p.min} … ${p.max}, por defecto ${p.defecto}`;
+    div.title = `${p.desc}\nmínimo ${p.min}${p.tope_duro ? `, máximo ${p.max}` : " (sin máximo: escribe el número)"}, por defecto ${p.defecto}`;
     div.innerHTML = `<label><b>${p.nombre}</b><span class="desc">${p.desc}</span></label>
       <input type="range" min="${p.min}" max="${p.max}" step="${p.paso}">
-      <input type="number" min="${p.min}" max="${p.max}" step="${p.paso}">
+      <input type="number" min="${p.min}" ${p.tope_duro ? `max="${p.max}"` : ""} step="${p.paso}">
       <button title="valor por defecto (${p.defecto})">↺</button>`;
     const [rango, num] = div.querySelectorAll("input");
     const cambiar = (v) => {
@@ -204,12 +204,17 @@ function enviarPendientes() {
   pendientes = {};
 }
 
+let borrador = null; // con el optimizador en marcha, valores elegidos que aún no se han ensayado
+let borradorBase = null; // valores del ensayo cuando se empezó el borrador
+
 function pintarValores() {
   for (const p of esquema) {
     const div = $("p-" + p.nombre);
     if (!div || pendientes[p.nombre] !== undefined) continue;
     const [rango, num] = div.querySelectorAll("input");
-    const v = valores[p.nombre];
+    const v = borrador ? borrador[p.nombre] : valores[p.nombre];
+    div.classList.toggle("borrador", !!borrador && borrador[p.nombre] !== borradorBase[p.nombre]);
+    if (+v > +rango.max) rango.max = v; // sin techo: el slider se estira (el número no tiene máximo)
     if (document.activeElement !== rango) rango.value = v;
     if (document.activeElement !== num) num.value = (+v).toFixed(decimales(p.paso));
     div.classList.remove("pendiente");
@@ -294,14 +299,36 @@ function dibujarMapa() {
 }
 
 // --- Vueltas: tabla y dispersión ------------------------------------------------
+let ultimoOpt = null;
+function difsBorrador() {
+  if (!borrador) return "";
+  const base = borradorBase || valores;
+  const d = esquema.filter((p) => borrador[p.nombre] !== base[p.nombre]);
+  if (!d.length) return `<p class="nota">(sin cambios todavía)</p>`;
+  return `<ul class="borrador-lista">${d.map((p) => `<li><b>${p.nombre}</b> ${+(+base[p.nombre]).toPrecision(3)} → <b>${+(+borrador[p.nombre]).toPrecision(3)}</b></li>`).join("")}</ul>`;
+}
 function pintarOptimizador(m) {
+  ultimoOpt = m || ultimoOpt;
+  m = ultimoOpt;
+  if (!m) return;
   const caja = $("optimizador");
   caja.hidden = false;
   const mejor = m.mejor ? `${m.mejor.valor.toFixed(2)} (ensayo ${m.mejor.ensayo}, ${m.mejor.tiempo_s} s)` : "–";
   caja.innerHTML = `<h2>Optimizador <small>${m.activo ? "en marcha" : "parado"}</small></h2>
     <div class="opt"><span>estudio</span><b>${m.estudio}</b><span>ensayo</span><b>${m.ensayo}</b>
     <span>fase</span><b>${m.fase}</b><span>mejor J</span><b>${mejor}</b>
-    <span>último</span><b>${m.ultimo || "–"}</b></div>`;
+    <span>último</span><b>${m.ultimo || "–"}</b></div>
+    ${m.ventanas ? `<details><summary>ventanas de búsqueda</summary><div class="opt">${Object.entries(m.ventanas)
+      .map(([k, [lo, hi]]) => `<span>${k}</span><b>${+lo.toPrecision(4)} … ${+hi.toPrecision(4)}</b>`).join("")}</div></details>` : ""}
+    ${m.activo ? `<p class="nota">${borrador
+      ? "Borrador = el ensayo de cuando empezaste a tocar + tus cambios (no toca el coche hasta que el optimizador lo ensaye):"
+      : "Mueve sliders o carga un preset: quedan en borrador y no tocan el ensayo en curso."}</p>
+    ${difsBorrador()}
+    <div class="fila"><button id="b-encolar" title="El optimizador ensaya estos valores después de la vuelta en curso y aprende del resultado">Probar en el optimizador</button>
+    <button id="b-descartar" ${borrador ? "" : "disabled"}>Descartar borrador</button></div>` : ""}`;
+  const be = $("b-encolar"), bd = $("b-descartar");
+  if (be) be.addEventListener("click", () => enviar({ tipo: "opt_encolar" }));
+  if (bd) bd.addEventListener("click", () => enviar({ tipo: "borrador_descartar" }));
 }
 
 const METRICAS = ["tiempo_s", "tiempo_reloj_s", "e_abs_medio", "e_rms", "e_max", "perdidos",
@@ -423,6 +450,12 @@ function conectar() {
       tray = [];
       if (m.motivo !== "pedido") aviso(`Reinicio automático (${m.motivo}): el coche vuelve a la salida`);
     } else if (m.tipo === "opt_estado") pintarOptimizador(m);
+    else if (m.tipo === "borrador") {
+      borrador = m.valores;
+      borradorBase = m.base || m.valores;
+      pintarValores();
+      pintarOptimizador();
+    }
     else if (m.tipo === "vuelta") {
       vueltas.push(m.fila);
       actualizarSelects();

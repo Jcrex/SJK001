@@ -26,6 +26,13 @@ SALIDA = RAIZ / "logs" / "optuna"
 def main():
     cfg = json.loads((Path(__file__).parent / "config.json").read_text())
     nombre = sys.argv[1] if len(sys.argv) > 1 else cfg["estudio"]
+    ventana = SALIDA / f"{nombre}_ventana.json"
+    if ventana.exists():  # ventana móvil: la generación actual tiene todos los ensayos
+        v = json.loads(ventana.read_text())
+        nombre = v["actual"]
+        for h in v.get("historial", []):
+            print(f"ventana g{h['gen']} ({h['fecha']}, {h['motivo']}): "
+                  + "; ".join(f"{k} → {b[0]:.4g}–{b[1]:.4g}" for k, (a, b) in h["cambios"].items()))
     estudio = optuna.load_study(study_name=nombre, storage=f"sqlite:///{SALIDA / (nombre + '.db')}")
     hechos = [t for t in estudio.trials if t.state == optuna.trial.TrialState.COMPLETE]
     if not hechos:

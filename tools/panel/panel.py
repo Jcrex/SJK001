@@ -28,7 +28,7 @@ ESTATICOS = Path(__file__).parent / "static"
 PRESETS = Path(__file__).parent / "presets"
 LOGS = RAIZ / "logs"
 HISTORIAL = 2400
-CODIGO = [Path(__file__), Path(__file__).parent / "static" / "panel.js"]
+CODIGO = [Path(__file__)] + [ESTATICOS / f for f in ("panel.js", "panel.css", "index.html")]
 _ARRANQUE = {f: f.stat().st_mtime for f in CODIGO}
 
 
@@ -146,6 +146,11 @@ class Panel:
         # se eligen sin controlador quedan esperando a que se conecte.
         self.deseados = {}
         self.opt_estado = None
+        # Con el optimizador en marcha los sliders no tocan el coche (estropearían el
+        # ensayo en curso): los cambios se acumulan en un borrador que se manda al
+        # optimizador como próximo ensayo con «Probar en el optimizador».
+        self.opt_ws = None
+        self.borrador = None
         self.f_csv = self.f_vueltas = None
 
     # --- ficheros ---------------------------------------------------------
@@ -192,23 +197,76 @@ class Panel:
         await ws.send_str(json.dumps(self.msg_estado()))
         if self.opt_estado:
             await ws.send_str(json.dumps(self.opt_estado))
+        if self.borrador is not None:
+            await ws.send_str(json.dumps(self.msg_borrador()))
         try:
             async for m in ws:
                 if m.type == WSMsgType.TEXT:
-                    await self.desde_navegador(json.loads(m.data))
+                    await self.desde_navegador(json.loads(m.data), ws)
         finally:
             self.navegadores.discard(ws)
+            if ws is self.opt_ws:  # el optimizador se ha parado
+                self.opt_ws = None
+                if self.opt_estado:
+                    self.opt_estado = dict(self.opt_estado, activo=False, fase="desconectado")
+                    await self.difundir(self.opt_estado)
+                if self.borrador is not None:
+                    self.borrador = None
+                    await self.difundir({"tipo": "borrador", "valores": None})
+                    await self.difundir({"tipo": "aviso", "texto": "Optimizador parado: borrador descartado"})
         return ws
 
-    async def desde_navegador(self, m):
+    def msg_borrador(self):
+        return {"tipo": "borrador", "valores": self.borrador,
+                "base": getattr(self, "borrador_base", None) if self.borrador else None}
+
+    def opt_activo(self):
+        return self.opt_ws is not None and bool(self.opt_estado and self.opt_estado.get("activo"))
+
+    async def a_borrador(self, cambios, texto=""):
+        nuevo = self.borrador is None
+        if nuevo:  # foto del ensayo en curso: el borrador parte de ella
+            self.borrador_base = dict(self.valores)
+        self.borrador = {**(self.borrador or self.valores), **cambios}
+        await self.difundir(self.msg_borrador())
+        if nuevo or texto:
+            await self.difundir({"tipo": "aviso", "texto": (texto + ". " if texto else "")
+                                 + "Optimizador en marcha: el cambio queda en borrador (no toca el coche). "
+                                 "Pulsa «Probar en el optimizador» para que lo ensaye."})
+
+    async def desde_navegador(self, m, ws=None):
         tipo = m.get("tipo")
-        if tipo == "set":
+        desde_opt = ws is not None and ws is self.opt_ws
+        if tipo == "set" and self.opt_activo() and not desde_opt:
+            await self.a_borrador(m.get("valores", {}))
+        elif tipo == "set":
             await self.pedir_params(m.get("valores", {}), "")
+        elif tipo == "opt_encolar":
+            if not self.opt_activo():
+                await self.difundir({"tipo": "aviso", "texto": "El optimizador no está en marcha"})
+            elif self.borrador is None:
+                await self.difundir({"tipo": "aviso", "texto": "No hay nada en el borrador: mueve algún "
+                                     "slider o carga un preset antes de pulsar «Probar en el optimizador»"})
+            else:
+                await self.opt_ws.send_str(json.dumps({"tipo": "encolar", "valores": self.borrador}))
+                self.borrador = None
+                await self.difundir({"tipo": "borrador", "valores": None})
+                await self.difundir({"tipo": "params", "valores": self.valores})
+        elif tipo == "borrador_descartar":
+            self.borrador = None
+            await self.difundir({"tipo": "borrador", "valores": None})
+            await self.difundir({"tipo": "params", "valores": self.valores})
+        elif tipo == "opt_aviso":  # respuesta del optimizador a «encolar»
+            await self.difundir({"tipo": "aviso", "texto": m.get("texto", "")})
+        elif tipo in ("reset_pid", "reiniciar") and self.opt_activo() and not desde_opt:
+            await self.difundir({"tipo": "aviso", "texto": "Optimizador en marcha: páralo (Ctrl+C) "
+                                 "antes de reiniciar a mano, o estropearás el ensayo en curso"})
         elif tipo in ("reset_pid", "reiniciar"):
             if not self.conectado:
                 await self.difundir({"tipo": "aviso", "texto": "Sin controlador: pulsa play en la web"})
             await self.al_controlador(m)
         elif tipo == "opt_estado":  # lo manda tools/optimizador; se reenvía a las pestañas
+            self.opt_ws = ws or self.opt_ws
             self.opt_estado = m
             await self.difundir(m)
         elif tipo == "marca":
@@ -225,7 +283,9 @@ class Panel:
             await self.difundir(self.msg_estado())
         elif tipo == "preset_cargar":
             f = PRESETS / f"{m.get('nombre')}.json"
-            if f.exists():
+            if f.exists() and self.opt_activo():
+                await self.a_borrador(json.loads(f.read_text()), f"preset «{f.stem}» en el borrador")
+            elif f.exists():
                 await self.pedir_params(json.loads(f.read_text()), f"preset «{f.stem}» cargado")
             else:
                 await self.difundir({"tipo": "aviso", "texto": f"no existe el preset «{m.get('nombre')}»"})
@@ -325,6 +385,14 @@ class Panel:
 async def principal(args):
     panel = Panel(args.host, args.puerto)
     app = web.Application()
+    @web.middleware
+    async def sin_cache(request, handler):  # que el navegador no use un panel.css/js viejo
+        resp = await handler(request)
+        if request.path != "/ws":
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    app.middlewares.append(sin_cache)
     app.router.add_get("/ws", panel.ws)
     app.router.add_get("/", lambda r: web.FileResponse(ESTATICOS / "index.html"))
     app.router.add_static("/static", ESTATICOS)

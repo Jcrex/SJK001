@@ -73,9 +73,12 @@ def test_linea_perdida_frena_y_mantiene_el_giro():
     assert v == ctl.prm["v_perdida"] and w == w0
 
 
-def test_ajustar_params_recorta_al_rango_e_ignora_desconocidos():
-    prm = fl.ajustar_params(fl.params_por_defecto(), {"kp": 99.0, "no_existe": 1, "ti": "0.5"})
-    assert prm["kp"] == 0.04 and prm["ti"] == 0.5 and "no_existe" not in prm
+def test_ajustar_params_solo_recorta_el_minimo_e_ignora_desconocidos():
+    prm = fl.ajustar_params(fl.params_por_defecto(),
+                            {"kp": 99.0, "v_max": 60.0, "td": -1.0, "no_existe": 1, "ti": "0.5"})
+    assert prm["kp"] == 99.0 and prm["v_max"] == 60.0  # sin techo
+    assert prm["td"] == 0.0 and prm["ti"] == 0.5 and "no_existe" not in prm
+    assert fl.ajustar_params(prm, {"reinicio_auto": 5})["reinicio_auto"] == 1.0  # tope duro
 
 
 def test_params_desde_entorno(monkeypatch):

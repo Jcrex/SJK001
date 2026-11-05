@@ -42,6 +42,11 @@ h3 { font-size: 12px; margin: 12px 0 4px; color: var(--acento); text-transform: 
 .param input[type=number] { width: 78px; padding: 2px 4px; font-variant-numeric: tabular-nums; }
 .param.cambiado label b { color: var(--acento); }
 .param.pendiente input[type=number] { border-color: orange; }
+.param.borrador { background: color-mix(in srgb, orange 14%, transparent); border-radius: 4px; }
+.param.borrador label b { color: #c2410c; }
+.borrador-lista { margin: 4px 0; padding: 6px 8px 6px 22px; background: color-mix(in srgb, orange 14%, transparent);
+  border-left: 3px solid orange; border-radius: 4px; font-variant-numeric: tabular-nums; }
+#optimizador .fila { display: flex; gap: 6px; margin-top: 6px; }
 .param button { padding: 0 4px; font-size: 12px; }
 .presets .fila { display: flex; gap: 6px; margin-bottom: 6px; } .presets input, .presets select { flex: 1; min-width: 0; }
 

@@ -372,6 +372,35 @@ Límite conocido: si el coche va muy torcido y la línea se sale por el lateral 
 imagen, las scanlines lejanas (y con ellas la banda) pueden saltar a otro tramo del
 circuito que asome por el horizonte.
 
+### 5.7 Estudio en caliente: proponer ensayos al optimizador desde el panel
+
+- **Parámetros nuevos sin perder lo aprendido:** se crea un estudio nuevo que importa los
+  ensayos del anterior (`importar` en `config.json`). Al parámetro nuevo se le da el valor
+  que tenía de verdad (k_hor = 0). Así se pasó de `simple_v1` a `simple_v2`.
+- **Modo borrador:** con el optimizador en marcha, los sliders y los presets no tocan el
+  coche. Los cambios quedan en un borrador (en naranja en el panel), y «Probar en el
+  optimizador» lo mete en la cola del estudio. Se ensaya tras la vuelta en curso y el
+  modelo aprende de él como de los suyos (`user_attrs.manual = 1`). Solo cuentan los
+  parámetros del espacio de búsqueda; los demás se ignoran, con aviso.
+- **simple_v3 (rangos ampliados):** en `simple_v2` el mejor resultado fue 15.1 s (ensayos
+  manuales #325 y #327, repetido por el optimizador en el #332): v_max = 30, k_hor = 0.008,
+  kp = 0.0096, td = 0.111, N = 14.8, k_ff = 0.46. Los 20 mejores estaban pegados a los
+  límites del espacio: v_max 30 (14 de 20), k_hor 0.008 (20), n_filtro 15 (19),
+  z_mirar_min 0.5 (15). `simple_v3` importa `simple_v2` y amplía los rangos: v_max ≤ 40
+  (en el controlador ≤ 45), k_hor ≤ 0.02, td ≤ 0.25, n_filtro ≤ 30, z_mirar_min ≥ 0.2.
+  w_max sigue fijo en 6, porque en las vueltas a v = 30 solo satura el 0.4 % del tiempo.
+- **Sin techo y ventana móvil:** el controlador ya no recorta ningún parámetro por arriba
+  (salvo `reinicio_auto`); el máximo de PARAMS es solo el recorrido inicial del slider.
+  En el optimizador, los rangos de `espacio` son una ventana que se desplaza. Cada 10
+  ensayos se miran los 10 mejores: si la mitad están a menos del 10 % de un borde, la
+  ventana se desplaza un 25 % del ancho hacia ese lado. También se desplaza si desde el
+  panel se pide un valor de fuera. Al moverse, la ventana deja a los mejores lejos del
+  borde contrario para que no rebote. Cada desplazamiento crea una generación del estudio
+  (`<estudio>_g<n>`) que importa los ensayos que caen dentro. El estado está en
+  `logs/optuna/<estudio>_ventana.json`, y `--informe` lee la generación actual.
+- **Protección:** si los parámetros cambian durante un ensayo, o se pulsa «Volver a la
+  salida», el ensayo se descarta (`interferencia`) en vez de guardarse con datos falsos.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -382,3 +411,4 @@ circuito que asome por el horizonte.
 | 2026-11-04 | 2 (en curso) | 43.4 s (v = 10, mismo P) | Scanlines + κ por círculo (error ≤ 4 %), preview de 0.25–0.35 s. Problema abierto: el coche ignora `w` pequeña a 10 m/s en algunos tramos. Ver 5.3 |
 | 2026-11-05 | 2 → 3 | — | PC nuevo. Bloqueo de giro explicado (fricción de DART alineada con los ejes + pared junto a la salida). Cámara recalibrada (CY = 237.45, H = 0.1015): κ correcta en curvas cerradas. PID del T03 en el controlador y panel de ajuste en vivo (5.4) |
 | 2026-11-05 | 3 | **20.2 s** (v8: v = 22, Kp = 0.009, Td = 0.08, k_ff = 0.4) | Ajuste manual en el panel; oscila mucho a v ≥ 19. Mirada adelantada, recuperación automática y optimizador bayesiano preparados (5.5) |
+| 2026-11-05 | 3 | **15.1 s** (v = 30, k_hor = 0.008, Kp = 0.0096, Td = 0.111, N = 14.8, k_ff = 0.46) | Banda del horizonte + optimizador con ensayos manuales en caliente (simple_v2). Rangos ampliados en simple_v3 (5.7) |
