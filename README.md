@@ -66,7 +66,7 @@ Aquí la referencia es la línea centrada ($r = 0$), la medida $y$ es el error e
 \boxed{\;
 w_k = \mathrm{sat}_{\pm w_{max}}\Big(
 \underbrace{-K_p'\,e_k}_{P}
-\;\underbrace{-\,K_p'\,\tfrac{T_d}{T}\,\big(\bar e_k-\bar e_{k-1}\big)}_{D\ \text{filtrada}}
+\;\underbrace{-\,K_p'\,T_d\,\frac{\Delta\bar e_k}{T}}_{D\ \text{filtrada}}
 \;+\;\underbrace{I_k}_{=\,0}
 \;+\;\underbrace{k_{ff}\,v_k\,\kappa_k}_{\text{prealimentación}}
 \;\underbrace{-\,k_{hor}\,e^{hor}_k}_{\text{horizonte}}
@@ -79,7 +79,9 @@ con
 \begin{aligned}
 K_p' &= \frac{K_p}{1 + k_{v}\,v_k} && \text{(ganancia según la velocidad)}\\
 e_k &= -F\,\frac{Y(L)}{L}, \quad L = \max\!\big(v_k\,t_{mirar},\ z_{min}\big) && \text{(error con mirada adelantada)}\\
-\bar e_k &= a\,\bar e_{k-1} + (1-a)\,e_k, \quad a = \frac{T_d/N}{T + T_d/N} && \text{(filtro de la D)}\\
+\bar e_k &= a\,\bar e_{k-1} + (1-a)\,e_k, \quad a = \frac{T_d/N}{T + T_d/N} && \text{(error filtrado para la D)}\\
+\Delta\bar e_k &= \bar e_k - \bar e_{k-1}, \qquad \frac{\Delta\bar e_k}{T} \approx \frac{d\bar e}{dt} && \text{(derivada discreta: cambio entre dos fotogramas)}\\
+\mathrm{sat}_{\pm w_{max}}(u) &= \min\!\big(\max(u,\,-w_{max}),\ w_{max}\big) && \text{(saturación: recorta } w \text{ a } [-w_{max},\,w_{max}]\text{)}\\
 e^{hor}_k &= \overline{x}_{banda} - c_x && \text{(columna media de la línea en el horizonte)}\\
 v_k &= \mathrm{rampa}\!\Big(\mathrm{clip}\Big(\frac{v_{max}}{1 + k_{vc}\,|\kappa_{lejos}|},\ v_{min},\ v_{max}\Big)\Big) && \text{(perfil de velocidad)}
 \end{aligned}
@@ -168,9 +170,6 @@ Ensayo #1054 de `simple_v3_g6`: **9.25–9.3 s en 3 de 3 vueltas** (J media 10.6
 | 56.4 | 6.51 | 10.8 | 0.00771 | 0.0836 | 15.2 | 0.765 | 0.023 | 0.175 | 0.316 | 0.0455 | 6 | 0 |
 
 El límite de rendimiento es la cámara (20 Hz, un fotograma cada 50 ms), no el cálculo: la percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (ver `docs/PLAN.md` §5.8).
-
----|---|---|---|---|---|---|---|---|---|---|---|---|
-| 54.5 | 5.39 | 10.9 | 0.00855 | 0.102 | 12.3 | 0.719 | 0.0058 | 0.197 | 0.45 | 0.054 | 6 | 0 |
 
 ---
 
