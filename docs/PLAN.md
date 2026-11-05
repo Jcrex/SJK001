@@ -398,6 +398,12 @@ circuito que asome por el horizonte.
   borde contrario para que no rebote. Cada desplazamiento crea una generación del estudio
   (`<estudio>_g<n>`) que importa los ensayos que caen dentro. El estado está en
   `logs/optuna/<estudio>_ventana.json`, y `--informe` lee la generación actual.
+- **Mejores por repeticiones:** el mejor del estudio era la mejor vuelta suelta, así que el
+  #595 (9.35 s) se confirmó 24 veces aunque solo completó 2. Ahora los parámetros repetidos
+  se agrupan y se ordenan por la J media de todas sus repeticiones (los choques, ~75,
+  incluidos). Con ese orden se eligen las confirmaciones (el primero de los 5 mejores con
+  menos de `confirmar_hasta` = 3 repeticiones), el preset `optuna_<estudio>`, los «mejores»
+  que mueven la ventana y el «mejor» del panel. El informe ordena igual.
 - **Protección:** si los parámetros cambian durante un ensayo, o se pulsa «Volver a la
   salida», el ensayo se descarta (`interferencia`) en vez de guardarse con datos falsos.
 

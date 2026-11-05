@@ -58,7 +58,10 @@
   "_t_max_ensayo": "s de reloj; si la vuelta no acaba antes, el ensayo cuenta como fallido.",
 
   "confirmar_cada": 10,
-  "_confirmar_cada": "Cada N ensayos se repite el mejor hasta ahora, para comprobar que no fue suerte. 0 = nunca.",
+  "_confirmar_cada": "Cada N ensayos se repite uno de los mejores, para comprobar que no fue suerte. 0 = nunca.",
+
+  "confirmar_hasta": 3,
+  "_confirmar_hasta": "Los mejores se ordenan por la J media de todas sus repeticiones (un choque cuenta ~75), no por su mejor vuelta. Se confirma el primero de los 5 mejores con menos de N repeticiones; uno ya repetido N veces no se repite más.",
 
   "max_ensayos": 0,
   "_max_ensayos": "0 = sin límite (hasta que lo pares con Ctrl+C).",

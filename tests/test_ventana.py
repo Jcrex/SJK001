@@ -52,3 +52,32 @@ def test_incluir_valor_pedido_desde_el_panel():
     c = o.incluir_valores({"t": (0.5, 1.0)}, {"t": -3.0}, [], {"t": 0.0}, {})
     assert c["t"][0] == 0.0  # no baja del mínimo del controlador
     assert o.incluir_valores({"r": (0.0, 1.0)}, {"r": 5.0}, [], {}, {"r": 1.0}) == {}  # tope duro
+
+
+def _estudio_con(vueltas):
+    import optuna
+    """Estudio en memoria con ensayos [(params, J, completada)]."""
+    est = optuna.create_study()
+    dist = {"v": optuna.distributions.FloatDistribution(0, 100)}
+    for params, J, ok in vueltas:
+        est.add_trial(optuna.trial.create_trial(params=params, distributions=dist, value=J,
+                                                user_attrs={"completada": ok, "tiempo_s": J if ok else 5.0}))
+    return est
+
+
+def test_clasificacion_ordena_por_la_media_de_las_repeticiones():
+    suerte = [({"v": 50.0}, 9.0, 1)] + [({"v": 50.0}, 75.0, 0)] * 3  # 1 de 4: media 58.5
+    fiable = [({"v": 40.0}, 10.0, 1)] * 3
+    solo_fallos = [({"v": 60.0}, 80.0, 0)]
+    clas = o.clasificacion(_estudio_con(suerte + fiable + solo_fallos))
+    assert [r["params"]["v"] for r in clas] == [40.0, 50.0]  # sin vuelta completa no entra
+    assert (clas[0]["n"], clas[0]["ok"], clas[0]["J"]) == (3, 3, 10.0)
+    assert (clas[1]["n"], clas[1]["ok"]) == (4, 1)
+    assert o.mejores(_estudio_con(suerte + fiable), 1) == [{"v": 40.0}]
+
+
+def test_confirmar_salta_los_ya_repetidos():
+    clas = o.clasificacion(_estudio_con([({"v": 40.0}, 10.0, 1)] * 3 + [({"v": 45.0}, 10.5, 1)]))
+    assert o.a_confirmar(clas, hasta=3)["params"] == {"v": 45.0}
+    assert o.a_confirmar(clas, hasta=5)["params"] == {"v": 40.0}
+    assert o.a_confirmar(clas[:1], hasta=3) is None

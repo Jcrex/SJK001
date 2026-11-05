@@ -176,10 +176,41 @@ def incluir_valores(espacio, valores, top, pisos, topes, umbral=0.1):
     return cambios
 
 
+def clasificacion(estudio):
+    """Parámetros agrupados por repeticiones y ordenados por J media.
+
+    Cada repetición de los mismos parámetros es un ensayo aparte. La mejor vuelta
+    suelta engaña: unos parámetros que completan 2 de 24 vueltas tienen un mínimo
+    muy bueno y una media pésima (cada choque vale ~75). La media de J de todas las
+    repeticiones es el coste esperado de una vuelta con esos parámetros.
+    Devuelve [{"params", "J", "n", "ok", "tiempo_s", "ensayo"}], el mejor primero;
+    solo grupos con al menos una vuelta completa. "ensayo" es el de mejor J.
+    """
+    grupos = {}
+    for t in estudio.trials:
+        if t.state == optuna.trial.TrialState.COMPLETE:
+            grupos.setdefault(tuple(sorted((k, round(v, 5)) for k, v in t.params.items())), []).append(t)
+    res = []
+    for g in grupos.values():
+        ok = [t for t in g if t.user_attrs.get("completada")]
+        if ok:
+            res.append({"params": g[0].params, "J": sum(t.value for t in g) / len(g), "n": len(g),
+                        "ok": len(ok), "tiempo_s": round(sum(t.user_attrs["tiempo_s"] for t in ok) / len(ok), 2),
+                        "ensayo": min(g, key=lambda t: t.value).number})
+    return sorted(res, key=lambda r: (r["J"], -r["n"]))
+
+
 def mejores(estudio, n):
-    ok = [t for t in estudio.trials
-          if t.state == optuna.trial.TrialState.COMPLETE and t.user_attrs.get("completada")]
-    return [t.params for t in sorted(ok, key=lambda t: t.value)[:n]]
+    return [r["params"] for r in clasificacion(estudio)[:n]]
+
+
+def a_confirmar(clas, hasta, top=5):
+    """Parámetros que conviene repetir: el primero de los `top` mejores que lleva
+    menos de `hasta` repeticiones (un campeón ya confirmado no se repite más)."""
+    for r in clas[:top]:
+        if r["n"] < hasta:
+            return r
+    return None
 
 
 class Ventana:
@@ -411,7 +442,7 @@ async def principal(ruta_cfg):
         if importar(estudio, cfg, imp.get("de", []), ven.espacio, imp.get("valores_previos")):
             # Probar a propósito los parámetros nuevos sobre el mejor importado: si todos los
             # ensayos viejos tienen el mismo valor, el modelo no sabría que merece la pena moverlos.
-            mejor = estudio.best_trial.params
+            mejor = clasificacion(estudio)[0]["params"] if clasificacion(estudio) else estudio.best_trial.params
             for k, valores in imp.get("probar_nuevos", {}).items():
                 for v in valores:
                     estudio.enqueue_trial({**mejor, k: v})
@@ -465,6 +496,8 @@ async def principal(ruta_cfg):
             return texto
 
         hechos = confirmado = 0
+        clas = clasificacion(estudio)
+        campeon = clas[0]["ensayo"] if clas else None
         while not cfg["max_ensayos"] or hechos < cfg["max_ensayos"]:
             # Cambios de ventana: solo entre vueltas
             if ens.pedidos:
@@ -487,19 +520,23 @@ async def principal(ruta_cfg):
                 if nuevas:
                     texto = cambiar_estudio(nuevas, "los mejores están en el borde")
                     await ens.enviar({"tipo": "opt_aviso", "texto": "Ventana desplazada: " + texto})
-            completos = [t for t in estudio.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            clas = clasificacion(estudio)
             if (cfg["confirmar_cada"] and hechos and hechos % cfg["confirmar_cada"] == 0
-                    and completos and confirmado != hechos):
+                    and confirmado != hechos):
                 confirmado = hechos
-                estudio.enqueue_trial(estudio.best_trial.params, user_attrs={"confirmacion": 1})
+                c = a_confirmar(clas, cfg.get("confirmar_hasta", 3))
+                if c:
+                    estudio.enqueue_trial(c["params"], user_attrs={"confirmacion": 1})
+                    print(f"[opt] confirmación: ensayo #{c['ensayo']} ({c['ok']}/{c['n']} completas)", flush=True)
             trial = estudio.ask()
             params = {k: trial.suggest_float(k, lo, hi) for k, (lo, hi) in espacio.items()}
             params = {k: round(v, 5) for k, v in params.items()}
             envio = {**fijos, **params}
             mejor = None
-            if completos:
-                b = estudio.best_trial
-                mejor = {"valor": b.value, "ensayo": b.number, "tiempo_s": b.user_attrs.get("tiempo_s")}
+            if clas:
+                b = clas[0]
+                mejor = {"valor": b["J"], "ensayo": b["ensayo"], "tiempo_s": b["tiempo_s"],
+                         "repes": f"{b['ok']}/{b['n']}"}
             await ens.estado(activo=True, estudio=ven.actual, ensayo=trial.number, fase="corriendo",
                              mejor=mejor, ultimo=getattr(ens, "ultimo", None),
                              ventanas={k: list(v) for k, v in espacio.items()})
@@ -533,11 +570,14 @@ async def principal(ruta_cfg):
             print(f"[opt] {ens.ultimo}  v_max={params.get('v_max')} kp={params.get('kp')} "
                   f"td={params.get('td')} k_ff={params.get('k_ff')} k_hor={params.get('k_hor')}",
                   flush=True)
-            if datos["completada"] and estudio.best_trial.number == trial.number:
+            clas = clasificacion(estudio)
+            if clas and clas[0]["ensayo"] != campeon:
+                b = clas[0]
+                campeon = b["ensayo"]
                 PRESETS.mkdir(exist_ok=True)
-                (PRESETS / f"optuna_{base}.json").write_text(json.dumps(envio, indent=2))
-                print(f"[opt] ★ nuevo mejor: J={J:.2f} ({datos['tiempo_s']} s) → preset optuna_{base}",
-                      flush=True)
+                (PRESETS / f"optuna_{base}.json").write_text(json.dumps({**fijos, **b["params"]}, indent=2))
+                print(f"[opt] ★ nuevo mejor: #{b['ensayo']} J media={b['J']:.2f} ({b['tiempo_s']} s, "
+                      f"{b['ok']}/{b['n']} completas) → preset optuna_{base}", flush=True)
         await ens.estado(activo=False, estudio=ven.actual, ensayo=len(estudio.trials), fase="terminado",
                          mejor=None, ultimo=getattr(ens, "ultimo", None))
 

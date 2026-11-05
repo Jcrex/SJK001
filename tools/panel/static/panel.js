@@ -313,10 +313,10 @@ function pintarOptimizador(m) {
   if (!m) return;
   const caja = $("optimizador");
   caja.hidden = false;
-  const mejor = m.mejor ? `${m.mejor.valor.toFixed(2)} (ensayo ${m.mejor.ensayo}, ${m.mejor.tiempo_s} s)` : "–";
+  const mejor = m.mejor ? `${m.mejor.valor.toFixed(2)} (ensayo ${m.mejor.ensayo}, ${m.mejor.tiempo_s} s${m.mejor.repes ? ", " + m.mejor.repes + " completas" : ""})` : "–";
   caja.innerHTML = `<h2>Optimizador <small>${m.activo ? "en marcha" : "parado"}</small></h2>
     <div class="opt"><span>estudio</span><b>${m.estudio}</b><span>ensayo</span><b>${m.ensayo}</b>
-    <span>fase</span><b>${m.fase}</b><span>mejor J</span><b>${mejor}</b>
+    <span>fase</span><b>${m.fase}</b><span>mejor J media</span><b>${mejor}</b>
     <span>último</span><b>${m.ultimo || "–"}</b></div>
     ${m.ventanas ? `<details><summary>ventanas de búsqueda</summary><div class="opt">${Object.entries(m.ventanas)
       .map(([k, [lo, hi]]) => `<span>${k}</span><b>${+lo.toPrecision(4)} … ${+hi.toPrecision(4)}</b>`).join("")}</div></details>` : ""}

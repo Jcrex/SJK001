@@ -42,23 +42,35 @@ def main():
     print(f"Estudio «{nombre}»: {len(hechos)} ensayos, {len(completas)} vueltas completas, "
           f"{len(hechos) - len(completas)} fallidas")
 
-    print("\nMejores 10 (J = tiempo + penalización de oscilación):")
-    for t in sorted(completas, key=lambda t: t.value)[:10]:
-        ua = t.user_attrs
-        par = " ".join(f"{k}={v:.4g}" for k, v in t.params.items())
-        conf = " (confirmación)" if ua.get("confirmacion") else ""
-        print(f"  #{t.number:<4} J={t.value:6.2f}  {ua.get('tiempo_s')} s  e_rms={ua.get('e_rms')}  "
-              f"w±/s={ua.get('cambios_w_s')}{conf}\n        {par}")
-
-    # Repeticiones de los mismos parámetros: ¿es reproducible?
+    # Mismos parámetros repetidos = un grupo. Se ordena por la J media de todas sus
+    # repeticiones (los choques incluidos), como hace el optimizador.
     grupos = {}
     for t in hechos:
-        grupos.setdefault(tuple(sorted(t.params.items())), []).append(t)
+        grupos.setdefault(tuple(sorted((k, round(v, 5)) for k, v in t.params.items())), []).append(t)
+    filas = []
+    for g in grupos.values():
+        ok = [t for t in g if t.user_attrs.get("completada")]
+        if ok:
+            filas.append((sum(t.value for t in g) / len(g), g, ok))
+    print("\nMejores 10 por J media de sus repeticiones (J = tiempo + penalización de oscilación):")
+    for Jm, g, ok in sorted(filas, key=lambda f: (f[0], -len(f[1])))[:10]:
+        t = min(ok, key=lambda t: t.value)
+        ua = t.user_attrs
+        par = " ".join(f"{k}={v:.4g}" for k, v in t.params.items())
+        tiempos = sorted(x.user_attrs["tiempo_s"] for x in ok)
+        print(f"  #{t.number:<4} J media={Jm:6.2f}  {len(ok)}/{len(g)} completas  "
+              f"tiempo {tiempos[0]}" + (f"–{tiempos[-1]}" if len(tiempos) > 1 else "")
+              + f" s  e_rms={ua.get('e_rms')}  w±/s={ua.get('cambios_w_s')}\n        {par}")
+
+    # Repeticiones de los mismos parámetros: ¿es reproducible?
     rep = [g for g in grupos.values() if len(g) > 1]
     if rep:
         print("\nParámetros repetidos (comprobación de que el resultado no fue suerte):")
         for g in rep:
-            print("  ensayos " + ", ".join(f"#{t.number}: {t.user_attrs.get('tiempo_s', 'FALLO')}" for t in g))
+            ok = sum(1 for t in g if t.user_attrs.get("completada"))
+            print(f"  {ok}/{len(g)} completas: " + ", ".join(
+                f"#{t.number}: " + (f"{t.user_attrs.get('tiempo_s')} s" if t.user_attrs.get("completada")
+                                    else f"FALLO ({t.user_attrs.get('motivo') or '?'})") for t in g))
 
     if len(hechos) >= 8:
         try:
