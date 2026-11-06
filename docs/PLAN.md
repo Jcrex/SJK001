@@ -527,6 +527,25 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
    `simple_v3`.
 5. **Probar otros circuitos**, para ver si los parámetros generalizan fuera de `simple`.
 
+### 5.11 Barridos de `k_hor` y `v_max`, filtro del horizonte descartado y `simple_v5` (2026-11-06, tarde)
+
+- **`k_hor` a v_max = 84:** 0.04 da 20/20 (5.92 s) y 0.05 da 19/20 (5.87 s); 0.03 no anticipa (6/20) y 0.064 oscila
+  (15/20). El óptimo baja con la velocidad.
+- **`v_max` con k_hor = 0.045:** 86 → **5.76 s en 20/20**; 88 → 5.66 s (16/20); 90 → 5.56 s (15/20). Los choques se
+  concentran en la curva de los ~350 m.
+- **Filtro de `e_hor` (`tau_hor`) descartado:** 0/20 vueltas con τ = 0.05–0.15 a 88 m/s. El horizonte forma parte del
+  lazo de giro y retrasarlo lo vuelve inestable. Se quitó del controlador. Detalle en ESTUDIO_PID.md §14.
+- **`simple_v5` lanzado** con `tools/optimizador/config_v5.json`: v_max en [84, 92], k_hor en [0.035, 0.06], resto ±20 %
+  alrededor de #194, confirmación con 5 repeticiones. Semillas: presets `w12_v86_kh045`, `w12_v90_kh045` y
+  `optuna_simple_v4`.
+- **Cargar el código:** desde unibotics.org (ejercicio Follow Line, simulador local). localhost:7163 no es una página.
+
+**Siguientes pasos:**
+1. Analizar `simple_v5` (`tools/optimizar.sh --informe simple_v5`) y confirmar el mejor con un barrido de 20 vueltas.
+2. Si el k_hor óptimo sigue bajando con v_max, escalarlo con la velocidad dentro de la vuelta (k_hor / (1 + k·v)).
+3. Mirar la curva de los ~350 m en la telemetría: es donde fallan casi todas las vueltas a ≥ 88 m/s.
+4. Regenerar el macroanálisis y probar otros circuitos (pasos 4–5 de §5.10).
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -544,3 +563,4 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 | 2026-11-06 | 3 | **6.4 s, 3 de 3** (#194 de simple_v4: v_max = 75.1, k_v_curva = 2.2, k_ff = 0.60, w_max = 12) | Estudio simple_v4 con w_max = 12: 94 % de vueltas completas. Cronómetro con paso por meta interpolado (5.9) |
 | 2026-11-06 | 3 | **5.92 s** (mediana, 18/20; mismos parámetros con v_max = 82) | Barrido de v_max 76–86 (20 vueltas por valor). Tiempo ≈ 426/(0.94·v_max) + 0.35 s (5.9) |
 | 2026-11-06 | 3 | 6.35 s (w_max = 20, v_max = 75.1; −0.02 s frente a w_max = 12) | Barrido de w_max 12–20 a 75 m/s: sin cambio de fiabilidad. Nuevo límite: la banda del horizonte sin filtrar a ≥ 80 m/s (5.9) |
+| 2026-11-06 | 3 | **5.76 s** (mediana, 20/20; v_max = 86, k_hor = 0.045) | Barrido de k_hor a 84 (óptimo 0.04–0.05) y de v_max 84–90 (5.56 s a 90, 15/20). Filtro de e_hor descartado (0/20). Estudio simple_v5 lanzado (5.11) |

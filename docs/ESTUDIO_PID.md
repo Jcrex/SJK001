@@ -500,3 +500,55 @@ parte, así que quitar la saturación no ayuda: la causa es el término en sí.
   2. **Escalar `k_hor` con la velocidad** (k_hor / (1 + k·v)), como `kv_kp` hace con Kp.
   3. **Filtrar `e_hor`** (filtro de primer orden o límite de variación por fotograma), como ya se filtra la D. Es un
      cambio del controlador (`src/follow_line.py`).
+
+## 14. Barridos de `k_hor`, `v_max` y filtro del horizonte (2026-11-06, 13:25–14:30)
+
+Base: preset `optuna_simple_v4` (#194) con w_max = 12, 20 vueltas por valor en orden intercalado.
+
+### `k_hor` a v_max = 84 (`logs/optuna/barrido_k_hor_20261106-132512.csv`)
+
+| k_hor | Completas | Mediana | J media | Cambios de signo de w/s |
+|---|---|---|---|---|
+| 0.03 | 6/20 (30 %) | 5.97 | 54.6 | 1.92 |
+| 0.04 | **20/20 (100 %)** | 5.92 | **7.3** | 2.00 |
+| 0.05 | 19/20 (95 %) | **5.87** | 10.5 | 2.34 |
+| 0.064 | 15/20 (75 %) | 5.90 | 26.1 | 3.74 |
+
+- Con poco horizonte (0.03) el coche no anticipa: casi todos los fallos son en la curva de los ~350 m.
+- Con mucho (0.064) oscila: casi el doble de cambios de signo de w, y fallos repartidos por el circuito.
+- **El óptimo baja con la velocidad:** 0.064 a 75 m/s (simple_v4), 0.04–0.05 a 84.
+
+### `v_max` con k_hor = 0.045 (`logs/optuna/barrido_v_max_20261106-134340.csv`)
+
+| v_max | Completas | Mediana | J media |
+|---|---|---|---|
+| 84 | 18/20 (90 %) | 5.89 | 13.6 |
+| **86** | **20/20 (100 %)** | **5.76** | **7.1** |
+| 88 | 16/20 (80 %) | 5.66 | 19.8 |
+| 90 | 15/20 (75 %) | 5.56 | 23.5 |
+
+El tiempo sigue bajando en proporción a 1/v_max. 9 de los 11 fallos son choques en la curva de los ~350 m.
+90 % frente a 100 % con 20 vueltas no es una diferencia significativa.
+
+### Filtro de `e_hor` a v_max = 88, k_hor = 0.064 (`logs/optuna/barrido_tau_hor_20261106-B.csv`)
+
+Se probó un paso bajo de primer orden, `e_f += dt/(τ+dt)·(e_hor − e_f)`, con un parámetro nuevo `tau_hor`:
+
+| tau_hor | Completas | Mediana |
+|---|---|---|
+| 0 (sin filtro) | 15/20 (75 %) | 5.65 |
+| 0.05 | 0/20 | — |
+| 0.10 | 0/20 | — |
+| 0.15 | 0/20 | — |
+
+Con cualquier filtro el coche choca en la primera curva (~62 m). La telemetría (`logs/20261106-140741_panel.csv`)
+muestra `e_hor` oscilando ±200 px y w saturado en ±12: **el horizonte forma parte del lazo de giro, y retrasarlo
+aunque sea un fotograma lo vuelve inestable.** Los saltos de §13 no son ruido que haya que limpiar: la oscilación con
+k_hor alto es falta de margen de ganancia. El filtro se quitó del controlador.
+
+### Conclusión
+
+- Mejor fiable: **5.76 s en 20/20** (v_max = 86, k_hor = 0.045). Mejor tiempo: 5.56 s (v_max = 90, 15/20).
+- `k_hor` debe bajar al subir la velocidad, no filtrarse. El estudio `simple_v5` (`config_v5.json`) busca
+  v_max en [84, 92] con k_hor en [0.035, 0.06]. Si el óptimo de k_hor sigue cayendo con v_max, el siguiente paso es
+  escalarlo dentro de la vuelta (k_hor / (1 + k·v)), como `kv_kp` con Kp.

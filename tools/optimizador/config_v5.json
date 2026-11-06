@@ -1,0 +1,102 @@
+{
+  "_ayuda": "Configuración del optimizador (tools/optimizar.sh). Las claves que empiezan por _ son comentarios.",
+  "estudio": "simple_v5",
+  "_estudio": "simple_v5 (2026-11-06): ventanas estrechas alrededor de simple_v4 #194 con los barridos de hoy. A v_max = 84 el mejor k_hor está en 0.04–0.05 (0.064 oscila); con k_hor = 0.045, v_max = 86 da 5.76 s en 20/20 y 90 da 5.56 s en 15/20. Filtrar e_hor (tau_hor) se descartó: 0/20 vueltas. Estudio nuevo sin importar simple_v4 (sus vueltas son a ≤ 76 m/s).",
+  "panel": "ws://127.0.0.1:8050/ws",
+  "espacio": {
+    "v_max": [
+      84.0,
+      92.0
+    ],
+    "k_v_curva": [
+      1.5,
+      3.5
+    ],
+    "v_min": [
+      8.38,
+      12.57
+    ],
+    "kp": [
+      0.00688,
+      0.01032
+    ],
+    "td": [
+      0.0686,
+      0.1029
+    ],
+    "n_filtro": [
+      9.71,
+      14.56
+    ],
+    "k_ff": [
+      0.479,
+      0.718
+    ],
+    "kv_kp": [
+      0.0,
+      0.008
+    ],
+    "t_mirar": [
+      0.07,
+      0.15
+    ],
+    "z_mirar_min": [
+      0.369,
+      0.554
+    ],
+    "k_hor": [
+      0.035,
+      0.06
+    ]
+  },
+  "_espacio": "Ventanas de ±20 % alrededor de simple_v4 #194 (preset optuna_simple_v4), salvo v_max [84, 92] (PLAN §5.10), k_hor [0.035, 0.06] (barrido de k_hor) y kv_kp desde 0. A ≥ 80 m/s cualquier cambio grande provoca fallos, por eso son estrechas. La ventana móvil las desplaza si los mejores se pegan a un borde.",
+  "fijos": {
+    "ti": 0.0,
+    "a_sub": 0.0,
+    "a_fren": 0.0,
+    "w_max": 12.0,
+    "v_perdida": 4.0,
+    "reinicio_auto": 1.0,
+    "t_perdida_max": 0.8,
+    "t_atasco": 0.7
+  },
+  "_fijos": "Valores que se mandan en todos los ensayos. Ti = 0 porque la I solo añade retardo (no hay perturbación constante que corregir).",
+  "importar": {
+    "de": [],
+    "valores_previos": {},
+    "probar_nuevos": {}
+  },
+  "_importar": "Solo al crear el estudio: copia los ensayos de los estudios de «de» para no perder lo aprendido. Un parámetro nuevo del espacio toma en ellos su valor de «valores_previos» (el que tenía de verdad: k_hor = 0 porque no existía). J se recalcula con el objetivo actual. «probar_nuevos» pone en cola el mejor ensayo importado con esos valores, para que el modelo vea si el parámetro nuevo ayuda. Para añadir otro parámetro más adelante: estudio nuevo, añadirlo al espacio y a valores_previos, e importar del estudio anterior.",
+  "ventana_movil": {
+    "activa": true,
+    "cada": 10,
+    "top": 10,
+    "umbral": 0.1,
+    "paso": 0.25
+  },
+  "_ventana_movil": "Los rangos de «espacio» son una ventana que se desplaza sola. Cada «cada» ensayos se miran los «top» mejores: si la mitad están a menos de umbral·ancho de un borde, la ventana de ese parámetro se desplaza paso·ancho hacia ese lado, sin dejar fuera a los mejores y sin bajar del mínimo del controlador. También se desplaza si desde el panel pides un valor de fuera. Cada desplazamiento crea una generación nueva del estudio (<estudio>_g1, _g2...) que importa todos los ensayos que caen dentro; el estado está en logs/optuna/<estudio>_ventana.json. Si cambias a mano un rango aquí, al arrancar se usa el tuyo.",
+  "semillas": [
+    "w12_v86_kh045",
+    "w12_v90_kh045",
+    "optuna_simple_v4"
+  ],
+  "_semillas": "simple_v4 #194 con k_hor = 0.045 a v_max = 86 (5.76 s, 20/20) y a 90 (5.56 s, 15/20), y #194 tal cual (recortado a la ventana: v_max = 84, k_hor = 0.06).",
+  "objetivo": {
+    "peso_e_rms": 0.5,
+    "peso_cambios_w": 0.1,
+    "penal_fallo": 60.0,
+    "distancia_vuelta": 430.0
+  },
+  "_objetivo": "J = tiempo + peso_e_rms·(e_rms/100) + peso_cambios_w·(cambios de signo de w por s). Con los pesos por defecto, la v8 (20.2 s, e_rms 221, 5 cambios/s) da J ≈ 21.8: 1 s de vuelta vale lo mismo que bajar 200 px el e_rms o 10 cambios/s. Pon los pesos a 0 para optimizar solo el tiempo. Una vuelta fallida vale penal_fallo + penal_fallo·(fracción de vuelta que faltaba): chocar tarde es mejor que chocar pronto.",
+  "t_max_ensayo": 90.0,
+  "_t_max_ensayo": "s de reloj; si la vuelta no acaba antes, el ensayo cuenta como fallido.",
+  "confirmar_cada": 10,
+  "_confirmar_cada": "Cada N ensayos se repite uno de los mejores, para comprobar que no fue suerte. 0 = nunca.",
+  "confirmar_hasta": 5,
+  "_confirmar_hasta": "Los mejores se ordenan por la J media de todas sus repeticiones (un choque cuenta ~75), no por su mejor vuelta. Se confirma el primero de los 5 mejores con menos de N repeticiones. N = 5 porque a ≥ 80 m/s 3 de 3 no garantiza fiabilidad (PLAN §5.10).",
+  "max_ensayos": 0,
+  "_max_ensayos": "0 = sin límite (hasta que lo pares con Ctrl+C).",
+  "arranque_aleatorio": 8,
+  "_arranque_aleatorio": "Ensayos al azar antes de que el modelo (TPE) empiece a proponer.",
+  "semilla_aleatoria": 1
+}

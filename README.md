@@ -9,9 +9,10 @@ Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 
 | + banda del horizonte + optimizador | 15.1 s |
 | Optimizador con ventana móvil y mejores por repeticiones (v ≈ 56–60, w_max = 6) | 8.95 s (3 de 3 vueltas) |
 | Giro máximo `w_max` de 6 a 12 rad/s y estudio nuevo `simple_v4` (v ≈ 75) | 6.4 s (3 de 3) · mejor vuelta 6.25 s |
-| Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | **5.92 s** (mediana, 18 de 20 vueltas) |
+| Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | 5.92 s (mediana, 18 de 20 vueltas) |
+| Barridos de `k_hor` (0.045 a 84 m/s) y de `v_max` (v = 86) | **5.76 s** (mediana, 20 de 20) · 5.56 s a v = 90 (15 de 20) |
 
-Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.92 s son 5.57 s de conducción.
+Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.76 s son 5.41 s de conducción.
 
 El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md). El análisis de todos los ensayos (qué parámetros importan, hacia dónde tiende el PID y qué limita la vuelta) está en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 
@@ -156,6 +157,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 |---|---|---|
 | `tools/optimizador/config.json` | `simple_v3` | w_max = 6. 1790 ensayos y 6 generaciones; mejor resultado 8.95 s (3/3) |
 | `tools/optimizador/config_v4.json` | `simple_v4` | w_max = 12, sin importar `simple_v3` (sus fallos se debían a la saturación) y ventanas centradas en su mejor. 273 ensayos, 94 % de vueltas completas |
+| `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces |
 
 `tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
 
@@ -196,7 +198,7 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ## 4. Mejores parámetros
 
-Ensayo #194 de `simple_v4_g7`: **6.40–6.45 s en 3 de 3 vueltas** (J media 7.74), guardado como preset `optuna_simple_v4`. Con los mismos parámetros y v_max = 82, el barrido da **5.92 s de mediana en 18 de 20 vueltas**.
+Ensayo #194 de `simple_v4_g7`: **6.40–6.45 s en 3 de 3 vueltas** (J media 7.74), guardado como preset `optuna_simple_v4`. Con los mismos parámetros y v_max = 82, el barrido da **5.92 s de mediana en 18 de 20 vueltas**. Bajando `k_hor` a 0.045, v_max = 86 da **5.76 s en 20 de 20** (ESTUDIO_PID.md §14).
 
 | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -219,9 +221,10 @@ docker run -d --rm --name robotics --device /dev/dri --gpus all \
   -p 6080-6090:6080-6090 -p 7163:7163 jderobot/robotics-backend:latest
 
 tools/panel.sh                                   # panel en http://localhost:8050
-# Pegar src/follow_line.py en la web del ejercicio (http://localhost:7163) y pulsar play
-tools/optimizar.sh tools/optimizador/config_v4.json   # optimizador (opcional)
-tools/optimizar.sh --informe simple_v4                # informe del estudio
+# En unibotics.org (ejercicio Follow Line, simulador local): pegar src/follow_line.py y pulsar play.
+# El puerto 7163 es la conexión de la web con el contenedor, no una página.
+tools/optimizar.sh tools/optimizador/config_v5.json   # optimizador (opcional)
+tools/optimizar.sh --informe simple_v5                # informe del estudio
 tools/barrido.sh --help                               # barrido de un parámetro
 uv run --with pandas --with scikit-learn --with matplotlib --with scipy \
   python tools/optimizador/macro_analisis.py          # macroanálisis → docs/img/estudio/
