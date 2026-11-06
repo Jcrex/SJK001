@@ -1,15 +1,19 @@
 # SJK001 · Follow Line F1 con PID
 
-Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 2 Humble + Gazebo Harmonic). Un F1 sigue la línea roja del circuito usando solo su cámara. El controlador es un **PID discreto** con varios añadidos que se explican abajo: mirada adelantada, prealimentación, banda del horizonte y perfil de velocidad. Sus parámetros se ajustan con un panel en vivo y con un optimizador bayesiano.
+Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 2 Humble + Gazebo Harmonic). Un F1 sigue la línea roja del circuito usando solo su cámara. El controlador es un **PID discreto** con varios añadidos que se explican abajo: mirada adelantada, prealimentación, banda del horizonte y perfil de velocidad. Sus parámetros se ajustan con un panel en vivo, con un optimizador bayesiano y con barridos de un parámetro.
 
 | Etapa | Vuelta al circuito *simple* |
 |---|---|
 | Control P (fase 1, v = 10 m/s) | 43.4 s |
 | PID ajustado a mano (v = 22) | 20.2 s |
 | + banda del horizonte + optimizador | 15.1 s |
-| Optimizador con ventana móvil y mejores por repeticiones (v ≈ 56, 3 de 3 vueltas) | **9.25 s** |
+| Optimizador con ventana móvil y mejores por repeticiones (v ≈ 56–60, w_max = 6) | 8.95 s (3 de 3 vueltas) |
+| Giro máximo `w_max` de 6 a 12 rad/s y estudio nuevo `simple_v4` (v ≈ 75) | 6.4 s (3 de 3) · mejor vuelta 6.25 s |
+| Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | **5.92 s** (mediana, 18 de 20 vueltas) |
 
-El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md).
+Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.92 s son 5.57 s de conducción.
+
+El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md). El análisis de todos los ensayos (qué parámetros importan, hacia dónde tiende el PID y qué limita la vuelta) está en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 
 ---
 
@@ -26,7 +30,7 @@ Z = \frac{F\,H}{y - c_y}, \qquad Y = -\frac{H\,(x - c_x)}{y - c_y}
 \qquad (F = 320\ \text{px},\ H = 0.1015\ \text{m},\ c_y = 237.45)
 ```
 
-   Con esos puntos se ajusta una parábola $Y(Z)$, que da la posición y el rumbo de la línea, y un círculo, que da la curvatura $\kappa$. También se calcula $\kappa_{lejos}$, la curvatura de los puntos a más de 1.5 m.
+   Con esos puntos se ajusta una parábola $Y(Z)$, que da la posición y el rumbo de la línea, y un círculo, que da la curvatura $\kappa$. También se calcula $\kappa_{lejos}$, la curvatura de los puntos a más de 1.5 m. La línea se ve como mucho a $z_{max} \approx 12.7$ m.
 
 2. **Velocidad.** Se frena según la curva que viene: $v_{ref}$ depende de $\kappa_{lejos}$ y una rampa limita la aceleración.
 3. **Giro.** El PID y los términos de prealimentación dan $w$, que se satura a $\pm w_{max}$.
@@ -95,19 +99,21 @@ v_k &= \mathrm{rampa}\!\Big(\mathrm{clip}\Big(\frac{v_{max}}{1 + k_{vc}\,|\kappa
 \dot\psi = w,\qquad \dot y \approx v\,\psi \quad\Longrightarrow\quad \frac{Y(s)}{W(s)} = \frac{v}{s^2}
 ```
 
-Un doble integrador tiene −180° de fase. Con solo P, el coche hace zigzag sin parar, y además hay ≈ 100 ms de retardo entre la imagen y la acción. Para estabilizarlo hace falta **adelanto de fase**. De ahí salen casi todos los términos:
+Un doble integrador tiene −180° de fase. Con solo P, el coche hace zigzag sin parar, y además hay ≈ 100 ms de retardo entre la imagen y la acción. Para estabilizarlo hace falta **adelanto de fase**. De ahí salen casi todos los términos.
+
+El simulador obedece casi al instante: el coche sigue el giro mandado al 98.6 % con un fotograma de retraso, y la velocidad se alcanza en un fotograma. Por eso los únicos límites son la cámara y los que pone el propio controlador.
 
 | Término | Parámetros | Por qué está |
 |---|---|---|
 | **P** | `kp` | Corrige la distancia a la línea. Es la base del lazo. |
-| **D filtrada** | `td`, `n_filtro` | Da adelanto de fase y amortigua el zigzag. El filtro $\tau_d = T_d/N$ suaviza los saltos de píxel entre fotogramas. Con $T = 50$ ms el filtro solo actúa si $\tau_d \gtrsim T$, es decir, si $N \lesssim T_d/T$. |
+| **D filtrada** | `td`, `n_filtro` | Da adelanto de fase y amortigua el zigzag. El filtro $\tau_d = T_d/N$ suaviza los saltos de píxel entre fotogramas. Con $T = 50$ ms el filtro solo actúa si $\tau_d \gtrsim T$, es decir, si $N \lesssim T_d/T$. Con los valores óptimos ($\tau_d \approx 0.007$ s) no actúa. |
 | **I** | `ti` = 0 | **Desactivada a propósito.** El coche no tiene ninguna perturbación constante que corregir (no derrapa) y la I solo resta 90° de fase. El código la mantiene con anti-windup por si se activa. |
-| **Saturación y anti-windup** | `w_max` | Limita el giro a lo físicamente razonable. El anti-windup evita que la I se cargue mientras $w$ está saturada y que el coche se pase a la salida de la curva. |
-| **Mirada adelantada** | `t_mirar`, `z_mirar_min` | El error se mide a $L = v\,t_{mirar}$ metros por delante (como *pure pursuit*). Como $e \approx F\,(y + L\psi)/L$ incluye el rumbo, añade un **cero en** $s = -1/t_{mirar}$: adelanto de fase **sin derivar ruido**. Es el término que más importa después de la velocidad. |
-| **Prealimentación (FF)** | `k_ff` | Para recorrer una curva de curvatura $\kappa$ a velocidad $v$ hace falta exactamente $w = v\,\kappa$. Sin FF, el P necesitaría un error permanente para producir ese giro. En teoría $k_{ff} = 1$, pero κ se mide por delante del coche y el óptimo está en ≈ 0.7. |
-| **Banda del horizonte** | `k_hor`, `fila_hor`, `n_filas_hor` | Las filas que tocan el horizonte ven la curva hasta 15 m antes (≈ 0.3 s a 50 m/s), cuando el error cercano aún es casi 0. Se suma como prealimentación, fuera de la D, para empezar a girar antes. En la imagen de la web se ve como una banda azul. |
-| **Ganancia según la velocidad** | `kv_kp` | La ganancia del lazo crece con $v$ (por $Y/W = v/s^2$). Bajar $K_p$ a alta velocidad mantiene el mismo margen de estabilidad. |
-| **Perfil de velocidad y rampa** | `v_max`, `k_v_curva`, `v_min`, `a_sub`, `a_fren` | El tiempo de vuelta es ≈ 430 m / v. Ir rápido en recta y frenar solo cuando $\kappa_{lejos}$ anuncia una curva cerrada. |
+| **Saturación y anti-windup** | `w_max` | Limita el giro. Con `w_max` = 6, a v ≈ 57 m/s, el giro iba saturado el 40–60 % del tiempo en la chicane norte (el 73 % en la mejor vuelta), donde ocurría la mayoría de choques. Con 12 (desde `simple_v4`) el coche puede entrar en curva al doble de velocidad. A 75 m/s, subirlo a 14–20 quita la saturación del todo (el coche nunca pide más de ~16.5 rad/s), pero las vueltas completas no cambian y el tiempo solo mejora 0.02 s. El anti-windup evita que la I se cargue mientras $w$ está saturada. |
+| **Mirada adelantada** | `t_mirar`, `z_mirar_min` | El error se mide a $L = v\,t_{mirar}$ metros por delante (como *pure pursuit*). Como $e \approx F\,(y + L\psi)/L$ incluye el rumbo, añade un **cero en** $s = -1/t_{mirar}$: adelanto de fase **sin derivar ruido**. Tiene un techo: la cámara ve la línea hasta 12.7 m, solo 0.17 s a 76 m/s. Por eso el óptimo se ha quedado en $t_{mirar} \approx 0.11$ s ($L \approx 8.5$ m). |
+| **Prealimentación (FF)** | `k_ff` | Para recorrer una curva de curvatura $\kappa$ a velocidad $v$ hace falta exactamente $w = v\,\kappa$. Sin FF, el P necesitaría un error permanente para producir ese giro. En teoría $k_{ff} = 1$, pero κ se mide por delante del coche. Con `w_max` = 6 el óptimo subía con v hasta ≈ 0.9; con 12 baja a ≈ 0.6, porque la realimentación ya no satura y una FF alta sobrecorrige. |
+| **Banda del horizonte** | `k_hor`, `fila_hor`, `n_filas_hor` | Las filas que tocan el horizonte ven la curva antes que el resto, cuando el error cercano aún es casi 0. Se suma como prealimentación, fuera de la D, para empezar a girar antes. A alta velocidad aporta casi la mitad del giro. Su óptimo es 0.04–0.065: por debajo de 0.02 casi ninguna vuelta se completa, y por encima de 0.08 hace zigzag. **Es el límite actual:** a más de ~80 m/s la línea en el horizonte salta hasta ~130 px entre fotogramas y, sin filtro, el término mete 7–8 rad/s de golpe. Domina el giro en el 61 % de los fallos. En la imagen de la web se ve como una banda azul. |
+| **Ganancia según la velocidad** | `kv_kp` | La ganancia del lazo crece con $v$ (por $Y/W = v/s^2$). Bajar $K_p$ a alta velocidad mantendría el mismo margen de estabilidad, pero el optimizador lo ha dejado en ≈ 0.004 (casi sin efecto): prefiere una realimentación más rígida. |
+| **Perfil de velocidad y rampa** | `v_max`, `k_v_curva`, `v_min`, `a_sub`, `a_fren` | El tiempo de vuelta es ≈ 426 m / v. Con `w_max` = 6 había que frenar mucho en curva (`k_v_curva` ≈ 7, unos 29 m/s en las chicanes). Con 12 casi no se frena (`k_v_curva` ≈ 2, nunca por debajo de ~57 m/s) y el tiempo depende casi solo de `v_max`. |
 | **Vigilante** | `t_perdida_max`, `t_atasco` | Si se pierde la línea o se atasca contra la pared, el coche vuelve solo a la salida. Así el optimizador puede encadenar cientos de vueltas sin intervención. |
 
 ---
@@ -129,7 +135,9 @@ Recibe la telemetría del controlador en cada fotograma, cambia parámetros sin 
 | **Tabla de vueltas** | Tiempo, e_rms, cambios de signo de w por segundo (oscilación) y los parámetros de cada vuelta. Un clic recarga esos parámetros. |
 | **Dispersión parámetro → métrica** | Ver qué parámetro afecta a qué métrica entre vueltas. |
 
-### 3.2 Optimizador bayesiano (`tools/optimizar.sh`)
+**Cronómetro.** Una vuelta empieza al pedir la vuelta a la salida y termina al pasar de nuevo junto a ella, a menos de 2.5 m, tras haberse alejado más de 30 m. A más de ~70 m/s el coche avanza más de 3.5 m por fotograma y podría saltarse ese círculo. Por eso el paso por meta se busca en el **tramo entre dos fotogramas** y el instante se interpola, con resolución menor que un fotograma (`tests/test_vueltas.py`). El tiempo incluye siempre los 0.35 s que tarda el simulador en colocar el coche: es constante, así que no cambia qué parámetros son mejores.
+
+### 3.2 Optimizador bayesiano (`tools/optimizar.sh [config]`)
 
 Optuna (TPE) lanza vueltas una tras otra desde el panel y minimiza
 
@@ -144,32 +152,62 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 - La **ventana de búsqueda se desplaza sola** cuando los mejores ensayos se acercan a un borde, así que no hay techo para ningún parámetro.
 - Cada 10 ensayos **repite uno de los mejores** para comprobar que no fue suerte. Los mejores se ordenan por la **J media de todas sus repeticiones**: un choque cuenta ~75, así que unos parámetros que completan 2 de 24 vueltas ya no pasan por buenos por una vuelta con suerte.
 
-`tools/optimizar.sh --informe` genera estas gráficas (las de abajo son del estudio `simple_v3_g6`, 1176 ensayos):
+| Configuración | Estudio | Qué cambia |
+|---|---|---|
+| `tools/optimizador/config.json` | `simple_v3` | w_max = 6. 1790 ensayos y 6 generaciones; mejor resultado 8.95 s (3/3) |
+| `tools/optimizador/config_v4.json` | `simple_v4` | w_max = 12, sin importar `simple_v3` (sus fallos se debían a la saturación) y ventanas centradas en su mejor. 273 ensayos, 94 % de vueltas completas |
+
+`tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
 
 | | |
 |---|---|
-| ![Historia](docs/img/optuna_historia.png) | **Historia.** J de cada ensayo y el mejor hasta el momento. Cada escalón de la línea negra es una mejora. Que sigan apareciendo escalones tras cientos de ensayos indica que mover la ventana de `v_max` hacia arriba sigue dando mejoras. |
-| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA).** Cuánto explica cada parámetro de la variación de J. Al final mandan `v_max` (0.21), `k_ff`, `k_v_curva` y `v_min` (≈ 0.15 cada uno): con la anticipación ya ajustada, lo que decide el tiempo es cuánto frenar en las curvas. `kv_kp` y `n_filtro` apenas cuentan y la I ni aparece. |
-| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** Dónde está la zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas). Se ve que J baja con más `v_max` hasta ≈ 56 y que `k_ff` funciona mejor hacia 0.75. |
-| ![Tiempo frente a oscilación](docs/img/optuna_tiempo_vs_osc.png) | **Tiempo frente a oscilación.** El compromiso entre ir rápido y no hacer zigzag; abajo a la izquierda es mejor. |
+| ![Historia](docs/img/optuna_historia.png) | **Historia.** J de cada ensayo y el mejor hasta el momento. Cada escalón de la línea negra es una mejora, y cada uno coincide con un desplazamiento de la ventana de `v_max` (64 → 80). Casi no hay fallos (puntos rojos): con `w_max` = 12 la zona buena es mucho más ancha que en `simple_v3`. |
+| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA).** Cuánto explica cada parámetro de la variación de J: `v_max` 0.27, `td` 0.24, `t_mirar` 0.10 y `k_v_curva` 0.09. El peso de `td` se debe en parte a que los primeros ensayos, más lentos, tenían `td` alto. Separando tiempo y fiabilidad, el tiempo lo explican `v_max` (0.72) y `k_v_curva` (0.26) (`docs/ESTUDIO_PID.md` §11). |
+| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** Dónde está la zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas). J baja casi en línea recta con `v_max` y sube con `k_v_curva` y `k_ff`. El resto se concentra en una franja estrecha: `td` ≈ 0.085, `n_filtro` ≈ 12, `t_mirar` ≈ 0.11, `k_hor` ≈ 0.065. |
+| ![Tiempo frente a oscilación](docs/img/optuna_tiempo_vs_osc.png) | **Tiempo frente a oscilación.** El compromiso entre ir rápido y no hacer zigzag; abajo a la izquierda es mejor. A más velocidad, más cambios de signo de w por segundo (2–4 a 75 m/s, frente a 1–2 a 57). |
 
-### 3.3 Análisis fuera de línea
+### 3.3 Barridos de un parámetro (`tools/barrido.sh`)
 
+Prueba varios valores de **un parámetro** con el resto fijo, N vueltas por valor (20 por defecto). Cada ronda recorre todos los valores en un orden barajado distinto, para que una deriva del simulador afecte a todos por igual. Se puede reanudar (`--salida <csv>`), y `--resumen <csv>` imprime la tabla. Necesita el optimizador parado.
+
+```bash
+tools/barrido.sh --base optuna_simple_v3 --param w_max --valores 6,7,8,9,10,11,12,13
+tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,86 --fijar w_max=12
+```
+
+![Barridos](docs/img/estudio/09_barridos.png)
+
+- **`w_max`** (base de 8.95 s): con 7 o más se completan 140 de 140 vueltas (con 6, 19 de 20), y a partir de 9 desaparece la saturación. El tiempo no cambia porque el perfil de velocidad era el mismo en todos. Es lo que llevó a `simple_v4`.
+- **`w_max` a 75 m/s** (base de 6.4 s, valores 12, 14, 16 y 20): la saturación baja del 8 % al 0 % y el tiempo mejora 0.02 s, pero las vueltas completas se quedan en el 80–90 %. Los fallos de este régimen no vienen del giro máximo, sino del horizonte (ver §4).
+- **`v_max`** (base de 6.4 s, 6 valores × 20 vueltas): el tiempo baja ~0.065 s por cada m/s (6.32 s a 76 → 5.67 s a 86). A 76, 78 y 82 m/s se completa el 90 % de las vueltas; a 80, el 60 %; a 84, el 75 %; y a 86, el 55 %. Los fallos se concentran en la chicane sur (~42 m) y en la chicane norte y la curva final (320–371 m).
+
+### 3.4 Análisis fuera de línea
+
+- `tools/optimizador/macro_analisis.py`: análisis de todos los ensayos, barridos y telemetría. Calcula la importancia de cada parámetro por separado para el tiempo, la fiabilidad y la oscilación (bosques aleatorios con validación cruzada), la tendencia de los buenos parámetros con la velocidad, qué término del control hace el trabajo y dónde y por qué falla el coche. Escribe las figuras en `docs/img/estudio/`. Resultados en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 - `analysis/kappa_vs_trayectoria.py`: correlaciona la κ que ve la cámara con la curvatura que recorre el coche (odometría). Da el adelanto real de la percepción y comprueba que la escala es ≈ 1.
 - `tools/resumen_log.py`: resumen de un log (error, giro, oscilación y fotogramas perdidos).
 - `tools/bench_percepcion.py`: coste en ms de la percepción.
+
+![Telemetría](docs/img/estudio/07_telemetria.png)
+
+*Izquierda:* reparto del giro entre los términos. A partir de 35 m/s, P y D aportan solo el 8–18 %; el resto lo ponen la prealimentación y el horizonte. *Centro:* dónde fallan las vueltas, casi todas en las dos chicanes. *Derecha:* los términos en la vuelta más rápida (5.65 s).
 
 ---
 
 ## 4. Mejores parámetros
 
-Ensayo #1054 de `simple_v3_g6`: **9.25–9.3 s en 3 de 3 vueltas** (J media 10.61), guardado como preset `optuna_simple_v3`. Hay otros 6 grupos de parámetros muy parecidos con 3/3 vueltas entre 9.25 y 9.4 s.
+Ensayo #194 de `simple_v4_g7`: **6.40–6.45 s en 3 de 3 vueltas** (J media 7.74), guardado como preset `optuna_simple_v4`. Con los mismos parámetros y v_max = 82, el barrido da **5.92 s de mediana en 18 de 20 vueltas**.
 
 | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 56.4 | 6.51 | 10.8 | 0.00771 | 0.0836 | 15.2 | 0.765 | 0.023 | 0.175 | 0.316 | 0.0455 | 6 | 0 |
+| 75.1 (82 en el barrido) | 2.24 | 10.5 | 0.00860 | 0.0858 | 12.1 | 0.598 | 0.0033 | 0.105 | 0.462 | 0.0639 | 12 | 0 |
 
-El límite de rendimiento es la cámara (20 Hz, un fotograma cada 50 ms), no el cálculo: la percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (ver `docs/PLAN.md` §5.8).
+**Qué limita ahora la vuelta:**
+
+- **La velocidad.** El coche va casi siempre al 94 % de `v_max`, así que el tiempo ≈ 426 m / (0.94·v_max) + 0.35 s.
+- **La cámara.** Ve la línea a 12.7 m como mucho: 3.4 fotogramas de anticipación a 76 m/s y 3 a 86.
+- **La banda del horizonte.** A más velocidad, su señal salta más entre fotogramas (p95 de 59 px a 60–70 m/s y de 131 px a 80–84 m/s). Como se suma al giro sin filtrar, puede meter 7–8 rad/s en un solo fotograma y provocar un zigzag que acaba en salida. Quitar la saturación del giro no lo arregla. Los siguientes pasos son ajustar `k_hor` a 82–84 m/s, escalarlo con la velocidad o filtrar `e_hor` (`docs/ESTUDIO_PID.md` §13).
+- **El cálculo no limita.** La percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (`docs/PLAN.md` §5.8).
 
 ---
 
@@ -180,17 +218,22 @@ El límite de rendimiento es la cámara (20 Hz, un fotograma cada 50 ms), no el 
 docker run -d --rm --name robotics --device /dev/dri --gpus all \
   -p 6080-6090:6080-6090 -p 7163:7163 jderobot/robotics-backend:latest
 
-tools/panel.sh          # panel en http://localhost:8050
+tools/panel.sh                                   # panel en http://localhost:8050
 # Pegar src/follow_line.py en la web del ejercicio (http://localhost:7163) y pulsar play
-tools/optimizar.sh      # optimizador (opcional); --informe para el informe
-tools/test.sh           # pruebas
+tools/optimizar.sh tools/optimizador/config_v4.json   # optimizador (opcional)
+tools/optimizar.sh --informe simple_v4                # informe del estudio
+tools/barrido.sh --help                               # barrido de un parámetro
+uv run --with pandas --with scikit-learn --with matplotlib --with scipy \
+  python tools/optimizador/macro_analisis.py          # macroanálisis → docs/img/estudio/
+tools/test.sh                                         # pruebas
 ```
 
 | Ruta | Contenido |
 |---|---|
 | `src/follow_line.py` | Controlador completo: percepción, PID, telemetría y recuperación. Se pega tal cual en la web. |
-| `tools/panel/` | Panel web en vivo (aiohttp + uPlot) y presets de parámetros. |
-| `tools/optimizador/` | Optimizador (Optuna), su configuración e informe. |
+| `tools/panel/` | Panel web en vivo (aiohttp + uPlot), cronómetro de vueltas y presets de parámetros. |
+| `tools/optimizador/` | Optimizador (Optuna) y sus configuraciones, informe, barridos y macroanálisis. |
 | `tools/sim/` | Utilidades del simulador: calibración de la cámara y pruebas de giro. |
-| `tests/` | Pruebas de percepción, control y ventana del optimizador. |
+| `tests/` | Pruebas de percepción, control, ventana del optimizador y cronómetro. |
 | `docs/PLAN.md` | Plan, teoría del T03 y registro de cada fase. |
+| `docs/ESTUDIO_PID.md` | Macroanálisis: impacto de los parámetros, tendencia del PID y límites. |

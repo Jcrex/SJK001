@@ -11,7 +11,8 @@
      <fecha>_panel_vueltas.csv  una fila por vuelta: tiempo, métricas y parámetros
    Cada play (o el botón «Nueva prueba») abre ficheros nuevos.
 4. Cronometra vueltas con la odometría: vuelta = alejarse > 30 m del punto de
-   partida y volver a < 2.5 m (como tools/vuelta.sh).
+   partida y volver a pasar a < 2.5 m (con el segmento entre fotogramas y el
+   tiempo interpolado, para no saltarse la meta a alta velocidad).
 """
 import argparse
 import asyncio
@@ -61,6 +62,7 @@ class Vueltas:
         self.dist = 0.0
         self.w_ant = None
         self.xy_ant = None
+        self.t_ant = None
         self.cambio_params = False
 
     def actual(self, t):
@@ -89,15 +91,28 @@ class Vueltas:
             return None
         if self.origen is None:
             self.origen = (x, y)
-        if self.xy_ant:
-            self.dist += math.hypot(x - self.xy_ant[0], y - self.xy_ant[1])
-        self.xy_ant = (x, y)
-        r = math.hypot(x - self.origen[0], y - self.origen[1])
-        if r > R_LEJOS:
+        ant, t_ant = self.xy_ant, self.t_ant
+        if ant:
+            self.dist += math.hypot(x - ant[0], y - ant[1])
+        self.xy_ant, self.t_ant = (x, y), t
+        if math.hypot(x - self.origen[0], y - self.origen[1]) > R_LEJOS:
             self.lejos = True
-        if not (self.lejos and r < R_CERCA):
+        if not self.lejos or ant is None:
             return None
-        return self._cerrar(t, params, True, "")
+        # Meta con el segmento entre dos fotogramas, no con el punto: a 76 m/s el coche avanza
+        # 3.8 m por fotograma y puede saltarse el círculo de 2.5 m. La vuelta se cierra en el
+        # punto del segmento más cercano a la salida, con el tiempo interpolado (resolución
+        # menor que un fotograma). Si el más cercano es el final del segmento, el coche aún se
+        # acerca: se espera al siguiente fotograma.
+        dx, dy = x - ant[0], y - ant[1]
+        L2 = dx * dx + dy * dy
+        u = 0.0 if L2 == 0 else ((self.origen[0] - ant[0]) * dx + (self.origen[1] - ant[1]) * dy) / L2
+        u = min(max(u, 0.0), 1.0)
+        if u >= 1.0 or math.hypot(ant[0] + u * dx - self.origen[0], ant[1] + u * dy - self.origen[1]) >= R_CERCA:
+            return None
+        t_meta = t if t is None or t_ant is None else t_ant + u * (t - t_ant)
+        self.dist -= (1.0 - u) * math.sqrt(L2)  # lo recorrido tras la meta es de la vuelta siguiente
+        return self._cerrar(t_meta, params, True, "")
 
     def fallo(self, motivo, t, params):
         """El coche se reinició en la salida. Devuelve la fila del intento fallido

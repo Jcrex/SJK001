@@ -457,6 +457,43 @@ y las gráficas del optimizador (`docs/img/optuna_*.png`, copiadas del informe d
    de sus ventanas). La ventana móvil los bajará sola si se sigue entrenando.
 4. Probar en otros circuitos para ver si generaliza: la ventana y el preset están afinados para `simple`.
 
+### 5.9 Macroanálisis, giro máximo y `simple_v4` (2026-11-06)
+
+Detalle completo, con cifras y figuras, en [`ESTUDIO_PID.md`](ESTUDIO_PID.md) (§0–9 para `simple_v3`, §10 para el
+barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macro_analisis.py`.
+
+- **Macroanálisis de `simple_v1`–`v3`** (2076 ensayos y 1827 vueltas con telemetría):
+  - El tiempo lo decide `v_max`; si la vuelta se completa lo decide `k_v_curva`; la oscilación la decide `k_hor`.
+  - `kp`, `td`, `n_filtro`, `kv_kp` y `z_mirar_min` son planos dentro de sus ventanas.
+  - P + D aportan solo el ~14 % del giro; la prealimentación y el horizonte, el resto.
+  - El 91 % de los fallos ocurre en las dos chicanes, con el giro saturado en `w_max` = 6.
+  - Con los mismos parámetros, el tiempo se repite con ±0.025 s, pero completar o no se repite solo la mitad de las
+    veces en el borde.
+- **Barrido de `w_max`** (`tools/barrido.sh`, 8 valores × 20 vueltas sobre el preset de 8.95 s):
+  - El simulador obedece giros por encima de 6.
+  - Con 7 o más se completan 140 de 140 vueltas, y la saturación desaparece a partir de 9.
+  - El tiempo no cambia, porque el perfil de velocidad era el mismo en todos los valores.
+- **`simple_v4`** (`config_v4.json`): w_max = 12, sin importar `simple_v3` y con ventanas centradas en su mejor.
+  - En 273 ensayos llega a **6.4 s en 3 de 3** (#194) y a 6.25 s de mejor vuelta, con un 94 % de vueltas completas.
+  - Casi no frena en curva: `k_v_curva` ≈ 2 y la v mínima ≈ 57 m/s.
+  - `k_ff` baja a ≈ 0.6.
+- **Cronómetro del panel:**
+  - El paso por meta se busca ahora en el tramo entre dos fotogramas y el instante se interpola. A más de ~70 m/s el
+    coche avanza más de 3.5 m por fotograma y el círculo de 2.5 m podía saltarse. Con las vueltas de v4 da las mismas
+    257 completas y +0.011 s de media.
+  - Todos los tiempos incluyen 0.35 s de reinicio del simulador. Es constante.
+- **Barrido de `v_max`** sobre el preset de `simple_v4` (6 valores × 20 vueltas):
+  - 82 m/s → **5.92 s** de mediana (18/20); 86 m/s → 5.67 s, pero solo 55 % de vueltas completas.
+  - El tiempo ≈ 426 m / (0.94·v_max) + 0.35 s.
+  - Límites: la cámara (12.7 m de alcance, 3 fotogramas a 86 m/s) y la saturación del giro corrector en las chicanes.
+- **Barrido de `w_max` a 75 m/s** (12, 14, 16 y 20; 20 vueltas cada uno):
+  - El simulador obedece giros de hasta ~16.5 rad/s, y la saturación baja del 8 % al 0 %.
+  - El tiempo mejora solo 0.02 s y las vueltas completas no cambian (80–90 %).
+  - La telemetría de los 49 fallos con w_max ≥ 12 señala la **banda del horizonte**: en el último medio segundo pone
+    el 65 % del giro (48 % en vueltas completas), y su salto entre fotogramas crece con v (p95 de 59 px a 60–70 m/s y
+    de 131 px a 80–84 m/s).
+  - Siguiente: ajustar `k_hor` a 82–84 m/s, escalarlo con v o filtrar `e_hor` (ESTUDIO_PID.md §13).
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -470,3 +507,7 @@ y las gráficas del optimizador (`docs/img/optuna_*.png`, copiadas del informe d
 | 2026-11-05 | 3 | **15.1 s** (v = 30, k_hor = 0.008, Kp = 0.0096, Td = 0.111, N = 14.8, k_ff = 0.46) | Banda del horizonte + optimizador con ensayos manuales en caliente (simple_v2). Rangos ampliados en simple_v3 (5.7) |
 | 2026-11-05 | 3 | 9.4 s (#828, v ≈ 54.5, 6/7 vueltas) | Sin techo en el controlador y ventana móvil: v_max sube por generaciones (g3–g5). Detectado que el «mejor» era una vuelta con suerte (#595, 2/24) (5.7) |
 | 2026-11-05 | 3 | **9.25 s, 3 de 3 vueltas** (#1054: v_max = 56.4, kp = 0.0077, td = 0.084, k_ff = 0.77, k_hor = 0.046, t_mirar = 0.18) | Mejores por J media de las repeticiones. Optimizador parado en simple_v3_g6 (1176 ensayos). C++ descartado: el límite es la cámara a 20 Hz. README con la ecuación y el diagrama (5.8) |
+| 2026-11-06 | 3 | 8.95 s, 3 de 3 (#1676: v_max = 60, k_v_curva = 7.6, k_ff = 0.91) | Macroanálisis de todos los ensayos (ESTUDIO_PID.md). Barrido de w_max 6–13: 140/140 vueltas con w_max ≥ 7, mismo tiempo (5.9) |
+| 2026-11-06 | 3 | **6.4 s, 3 de 3** (#194 de simple_v4: v_max = 75.1, k_v_curva = 2.2, k_ff = 0.60, w_max = 12) | Estudio simple_v4 con w_max = 12: 94 % de vueltas completas. Cronómetro con paso por meta interpolado (5.9) |
+| 2026-11-06 | 3 | **5.92 s** (mediana, 18/20; mismos parámetros con v_max = 82) | Barrido de v_max 76–86 (20 vueltas por valor). Tiempo ≈ 426/(0.94·v_max) + 0.35 s (5.9) |
+| 2026-11-06 | 3 | 6.35 s (w_max = 20, v_max = 75.1; −0.02 s frente a w_max = 12) | Barrido de w_max 12–20 a 75 m/s: sin cambio de fiabilidad. Nuevo límite: la banda del horizonte sin filtrar a ≥ 80 m/s (5.9) |
