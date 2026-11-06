@@ -494,6 +494,39 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
     de 131 px a 80–84 m/s).
   - Siguiente: ajustar `k_hor` a 82–84 m/s, escalarlo con v o filtrar `e_hor` (ESTUDIO_PID.md §13).
 
+### 5.10 Estado al cerrar la sesión (2026-11-06, 02:50) y siguiente sesión
+
+**Estado:**
+- **Mejor fiable:** 5.92 s de mediana (18/20) con el preset `optuna_simple_v4` y v_max = 82. Tiempos con 0.35 s de
+  reinicio incluidos.
+- **Mejor del optimizador:** `simple_v4` #194, 6.40–6.45 s en 3/3 (v_max = 75.1). Parado en `simple_v4_g7` tras
+  273 ensayos.
+- **Parámetros:** en la tabla del README (§4). Ojo: `tools/panel/presets/optuna_*.json` está en `.gitignore`, así que
+  los presets `optuna_simple_v4` y `optuna_simple_v3` solo existen en este PC.
+- **Límite actual:** la banda del horizonte a ≥ 80 m/s (ESTUDIO_PID.md §13). `w_max` ya no limita, y la cámara
+  (12.7 m de alcance) es el muro de fondo.
+- **Datos de los barridos:** `logs/optuna/barrido_w_max_20261106-004141.csv` (6–13 a 60 m/s),
+  `barrido_v_max_20261106-020516.csv` (76–86) y `barrido_w_max_20261106-021947.csv` (12–20 a 75 m/s). Están en `logs/`,
+  que no se versiona.
+- **Procesos:** el panel, el optimizador y los barridos están parados. El contenedor `robotics` sigue en marcha.
+
+**Para arrancar:**
+1. Si el contenedor no está: `docker run …` (README §5). Después, `tools/panel.sh`.
+2. Pegar `src/follow_line.py` en http://localhost:7163 y pulsar play.
+3. Cargar el preset `optuna_simple_v4` en el panel y comprobar una vuelta (~6.4 s a v_max = 75.1).
+
+**Siguientes pasos, por orden:**
+1. **Barrer `k_hor` a v_max = 84**, porque el valor actual (0.064) se ajustó a 75:
+   `tools/barrido.sh --base optuna_simple_v4 --param k_hor --valores 0.03,0.04,0.05,0.064 --fijar w_max=12,v_max=84`
+2. **Según lo que salga**, escalar `k_hor` con la velocidad o filtrar `e_hor` en `src/follow_line.py`. Hay que tocar el
+   controlador, añadir pruebas en `tests/test_control.py` y medir con un barrido igual que el anterior.
+3. **Estudio `simple_v5`:** copiar `config_v4.json`, con `v_max` en [80, 92], `w_max` = 12–16 y ventanas estrechas
+   alrededor del mejor. Repetir cada candidato al menos 5 veces, porque a ≥ 80 m/s 3 de 3 no garantiza fiabilidad.
+4. **Regenerar el macroanálisis:** `macro_analisis.py`, y después §11–13 del estudio y el README. Pendiente: que las
+   figuras 02–05 y 08 (importancia, interacciones, palancas) se calculen también para `simple_v4` y no solo para
+   `simple_v3`.
+5. **Probar otros circuitos**, para ver si los parámetros generalizan fuera de `simple`.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
