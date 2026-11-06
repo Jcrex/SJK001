@@ -10,9 +10,10 @@ Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 
 | Optimizador con ventana móvil y mejores por repeticiones (v ≈ 56–60, w_max = 6) | 8.95 s (3 de 3 vueltas) |
 | Giro máximo `w_max` de 6 a 12 rad/s y estudio nuevo `simple_v4` (v ≈ 75) | 6.4 s (3 de 3) · mejor vuelta 6.25 s |
 | Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | 5.92 s (mediana, 18 de 20 vueltas) |
-| Barridos de `k_hor` (0.045 a 84 m/s) y de `v_max` (v = 86) | **5.76 s** (mediana, 20 de 20) · 5.56 s a v = 90 (15 de 20) |
+| Barridos de `k_hor` (0.045 a 84 m/s) y de `v_max` (v = 86) | 5.76 s (mediana, 20 de 20) · 5.56 s a v = 90 (15 de 20) |
+| Estudio `simple_v5` (v ≈ 95.5, 1338 ensayos) | **5.25 s** (4 de 4) · mejor vuelta 5.18 s |
 
-Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.76 s son 5.41 s de conducción.
+Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.25 s son 4.90 s de conducción.
 
 El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md). El análisis de todos los ensayos (qué parámetros importan, hacia dónde tiende el PID y qué limita la vuelta) está en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 
@@ -157,7 +158,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 |---|---|---|
 | `tools/optimizador/config.json` | `simple_v3` | w_max = 6. 1790 ensayos y 6 generaciones; mejor resultado 8.95 s (3/3) |
 | `tools/optimizador/config_v4.json` | `simple_v4` | w_max = 12, sin importar `simple_v3` (sus fallos se debían a la saturación) y ventanas centradas en su mejor. 273 ensayos, 94 % de vueltas completas |
-| `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces |
+| `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces. 1338 ensayos (g0–g6): la ventana de v_max subió sola hasta 93–102, con 5.25 s en 4 de 4 a v_max = 95.5 |
 
 `tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
 
@@ -198,17 +199,19 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ## 4. Mejores parámetros
 
-Ensayo #194 de `simple_v4_g7`: **6.40–6.45 s en 3 de 3 vueltas** (J media 7.74), guardado como preset `optuna_simple_v4`. Con los mismos parámetros y v_max = 82, el barrido da **5.92 s de mediana en 18 de 20 vueltas**. Bajando `k_hor` a 0.045, v_max = 86 da **5.76 s en 20 de 20** (ESTUDIO_PID.md §14).
+Ensayo #775 de `simple_v5_g4`: **5.25 s de mediana en 4 de 4 vueltas** (J media 6.65), guardado como preset `w12_v95_n775`. Ojo: a ≥ 92 m/s, de los parámetros que completan la primera vuelta solo el 64 % completa las repeticiones, así que 4 de 4 todavía no garantiza fiabilidad (ESTUDIO_PID.md §15). El mejor fiable medido con 20 vueltas sigue siendo **5.76 s en 20 de 20** (`simple_v4` #194 con v_max = 86 y k_hor = 0.045, preset `w12_v86_kh045`).
 
-| v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 75.1 (82 en el barrido) | 2.24 | 10.5 | 0.00860 | 0.0858 | 12.1 | 0.598 | 0.0033 | 0.105 | 0.462 | 0.0639 | 12 | 0 |
+| Parámetros | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `simple_v5` #775 (5.25 s, 4/4) | 95.5 | 2.63 | 9.79 | 0.0103 | 0.0782 | 10.3 | 0.657 | 0.0038 | 0.124 | 0.385 | 0.0438 | 12 | 0 |
+| `simple_v4` #194 en el barrido (5.76 s, 20/20) | 86 | 2.24 | 10.5 | 0.00860 | 0.0858 | 12.1 | 0.598 | 0.0033 | 0.105 | 0.462 | 0.045 | 12 | 0 |
 
 **Qué limita ahora la vuelta:**
 
-- **La velocidad.** El coche va casi siempre al 94 % de `v_max`, así que el tiempo ≈ 426 m / (0.94·v_max) + 0.35 s.
-- **La cámara.** Ve la línea a 12.7 m como mucho: 3.4 fotogramas de anticipación a 76 m/s y 3 a 86.
-- **La banda del horizonte.** A más velocidad, su señal salta más entre fotogramas (p95 de 59 px a 60–70 m/s y de 131 px a 80–84 m/s). Como se suma al giro sin filtrar, puede meter 7–8 rad/s en un solo fotograma y provocar un zigzag que acaba en salida. Quitar la saturación del giro no lo arregla. Los siguientes pasos son ajustar `k_hor` a 82–84 m/s, escalarlo con la velocidad o filtrar `e_hor` (`docs/ESTUDIO_PID.md` §13).
+- **La chicane norte (350–360 m).** A ≥ 92 m/s concentra el 67 % de los fallos. Allí el giro va saturado en w_max = 12 la mitad del tiempo, tanto en las vueltas que pasan como en las que chocan, y el coche va ~180 px desviado de la línea. Por encima de 96 m/s se completa menos de la mitad de las vueltas (`docs/ESTUDIO_PID.md` §15).
+- **La velocidad.** A 95 m/s el coche va al 85 % de `v_max` de media (el 94 % a 75), porque frena más en curva. De 94 a 96 m/s la mediana solo baja 0.06 s.
+- **La cámara.** Ve la línea a 12.7 m como mucho: 3 fotogramas de anticipación a 86 m/s y 2.7 a 95.
+- **La banda del horizonte.** Su ganancia buena baja con la velocidad (0.064 a 75 m/s, 0.04–0.045 a 84–96). Filtrar `e_hor` no sirve: retrasarlo un fotograma vuelve inestable el giro (0 de 20 vueltas, `docs/ESTUDIO_PID.md` §14).
 - **El cálculo no limita.** La percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (`docs/PLAN.md` §5.8).
 
 ---

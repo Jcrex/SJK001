@@ -43,6 +43,22 @@ plt.rcParams.update({"axes.grid": True, "grid.alpha": 0.3, "axes.spines.top": Fa
                      "axes.spines.right": False, "figure.dpi": 110})
 
 
+# Regímenes con el mismo espacio de parámetros: w_max = 6 (simple_v3) y w_max = 12 (simple_v4–v5).
+# Cada uno tiene su corte de «rápido», sus tramos de v_max y su sufijo en los nombres de las figuras.
+REGIMENES = [
+    {"nombre": "simple_v3 (w_max = 6)", "prefijos": ("simple_v3",), "sufijo": "", "rapido": 48,
+     "tramos": [0, 30, 35, 40, 44, 48, 51, 54, 56, 58, 60, 70], "palancas_desde": 54,
+     "cortes_kvc": [0, 3, 4, 5, 6, 7, 8, 10, 15], "cortes_khor": [0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12, 1]},
+    {"nombre": "simple_v4–v5 (w_max = 12)", "prefijos": ("simple_v4", "simple_v5"), "sufijo": "_w12", "rapido": 90,
+     "tramos": [55, 65, 70, 74, 78, 84, 88, 90, 92, 94, 96, 98, 105], "palancas_desde": 90,
+     "cortes_kvc": [1.5, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 6, 11], "cortes_khor": [0.02, 0.035, 0.04, 0.045, 0.05, 0.06, 0.08]},
+]
+
+
+def del_regimen(df, reg):
+    return df[df.estudio.str.startswith(reg["prefijos"])].copy()
+
+
 def titulo(t):
     print("\n" + "=" * 78 + f"\n{t}\n" + "=" * 78)
 
@@ -50,7 +66,7 @@ def titulo(t):
 # ---------------------------------------------------------------- carga
 def cargar():
     dfs = []
-    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4"]:
+    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4", "simple_v5"]:
         ruta = OPT / f"{f}_ensayos.csv"
         if ruta.exists():
             d = pd.read_csv(ruta)
@@ -75,6 +91,10 @@ def cargar():
 
 
 # ---------------------------------------------------------------- 1. evolución
+MARCAS = ("simple_v1", "simple_v2", "simple_v3", "simple_v3_g4", "simple_v3_g5", "simple_v3_g6", "simple_v4",
+          "simple_v5")
+
+
 def evolucion(df):
     titulo("1. EVOLUCIÓN DE LA BÚSQUEDA")
     g = df.groupby("estudio", sort=False)
@@ -99,7 +119,7 @@ def evolucion(df):
     best = ok.set_index("orden").tiempo_s.cummin()
     ax.step(best.index, best.values, where="post", c=NEGRO, lw=1.5, label="mejor tiempo hasta el momento")
     ax.set_ylabel("tiempo de vuelta (s)")
-    ax.set_ylim(5.5, 30)
+    ax.set_ylim(5.0, 30)
     ax.legend(loc="center right")
     ax = axs[1]
     roll = df.ok.rolling(60, min_periods=20).mean() * 100
@@ -119,10 +139,10 @@ def evolucion(df):
     ax.legend(loc="upper left")
     for a in axs:
         for est, x0 in df.groupby("estudio", sort=False).orden.min().items():
-            if est in ("simple_v2", "simple_v3", "simple_v3_g4", "simple_v3_g5", "simple_v3_g6", "simple_v4"):
+            if est in MARCAS[1:]:
                 a.axvline(x0, c=GRIS, lw=0.8, ls="--")
     for est, x0 in df.groupby("estudio", sort=False).orden.min().items():
-        if est in ("simple_v1", "simple_v2", "simple_v3", "simple_v3_g4", "simple_v3_g5", "simple_v3_g6", "simple_v4"):
+        if est in MARCAS:
             axs[0].text(x0 + 5, 29, est.replace("simple_", ""), fontsize=8, color="#4b5563", va="top")
     fig.suptitle("Evolución: más rápido, pero cada vez menos vueltas completas")
     fig.tight_layout()
@@ -150,7 +170,7 @@ def ruido(df):
     r = resto[resto.clave.isin(bien)]
     print(f"Si la 1.ª vuelta completó, las repeticiones completan el {r.ok.mean():.0%} de las veces "
           f"({r.ok.sum()}/{len(r)}).")
-    for lo, hi in [(0, 45), (45, 52), (52, 56), (56, 70)]:
+    for lo, hi in [(0, 45), (45, 52), (52, 56), (56, 70), (70, 84), (84, 92), (92, 105)]:
         s = r[(r.v_max >= lo) & (r.v_max < hi)]
         if len(s):
             print(f"   v_max {lo}-{hi}: {s.ok.mean():.0%} ({s.ok.sum()}/{len(s)})")
@@ -181,17 +201,18 @@ def _rf_importancia(X, y, clasif, semilla=0):
     return m, imp, calidad
 
 
-def importancia(df):
-    titulo("3. QUÉ PARÁMETROS TIENEN MÁS IMPACTO")
-    # Solo v3 (mismo espacio de parámetros, ya con k_hor) para comparar manzanas con manzanas
-    d = df[df.estudio.str.startswith("simple_v3")].copy()
-    rap = d[d.v_max >= 48]
+def importancia(df, reg):
+    titulo(f"3. QUÉ PARÁMETROS TIENEN MÁS IMPACTO · {reg['nombre']}")
+    # Un régimen cada vez (mismo espacio de parámetros) para comparar manzanas con manzanas
+    d = del_regimen(df, reg)
+    suf, vr = reg["sufijo"], reg["rapido"]
+    rap = d[d.v_max >= vr]
     objetivos = {
         "P(completar)": (d, "ok", True),
         "tiempo (completas)": (d[d.ok == 1], "tiempo_s", False),
         "oscilación w±/s": (d[d.ok == 1], "cambios_w_s", False),
-        "P(completar) | v_max≥48": (rap, "ok", True),
-        "tiempo | v_max≥48": (rap[rap.ok == 1], "tiempo_s", False),
+        f"P(completar) | v_max≥{vr}": (rap, "ok", True),
+        f"tiempo | v_max≥{vr}": (rap[rap.ok == 1], "tiempo_s", False),
     }
     res, modelos, rho = {}, {}, {}
     for nombre, (sub, col, clas) in objetivos.items():
@@ -224,15 +245,22 @@ def importancia(df):
                         color="white" if abs(M.values[i, j]) > (0.25 if vmin == 0 else 0.4) else "black")
         ax.set_title(t, fontsize=10)
         fig.colorbar(im, ax=ax, shrink=0.8)
-    fig.suptitle("Impacto de cada parámetro según la métrica (estudio simple_v3, todas las generaciones)")
+    fig.suptitle(f"Impacto de cada parámetro según la métrica ({reg['nombre']}, todas las generaciones)")
     fig.tight_layout()
-    fig.savefig(FIG / "02_importancia.png")
+    fig.savefig(FIG / f"02_importancia{suf}.png")
     plt.close(fig)
 
     # Dependencia parcial 1D: P(completar) y tiempo frente a cada parámetro
     fig, axs = plt.subplots(3, 4, figsize=(15, 9))
     mok, sok = modelos["P(completar)"]
     mt, st = modelos["tiempo (completas)"]
+    # Misma escala de tiempo en todos (la que cubre todas las curvas): un efecto pequeño se ve pequeño
+    curvas_t = {p: partial_dependence(mt, st[PARAMS], [p], grid_resolution=30, percentiles=(0.02, 0.98))
+                for p in PARAMS}
+    t_lo = min(c["average"][0].min() for c in curvas_t.values())
+    t_hi = max(c["average"][0].max() for c in curvas_t.values())
+    t_lo, t_hi = t_lo - 0.05 * (t_hi - t_lo), t_hi + 0.05 * (t_hi - t_lo)
+    mejor = d.loc[d[d.ok == 1].tiempo_s.idxmin()]
     for ax, p in zip(axs.flat, PARAMS):
         pdp = partial_dependence(mok, sok[PARAMS], [p], grid_resolution=30, percentiles=(0.02, 0.98))
         x, yv = pdp["grid_values"][0], pdp["average"][0]
@@ -240,21 +268,20 @@ def importancia(df):
         ax.set_ylabel("% completas", color=VERDE, fontsize=8)
         ax.set_ylim(0, 100)
         ax2 = ax.twinx()
-        pdt = partial_dependence(mt, st[PARAMS], [p], grid_resolution=30, percentiles=(0.02, 0.98))
+        pdt = curvas_t[p]
         ax2.plot(pdt["grid_values"][0], pdt["average"][0], c=AZUL, lw=2)
         ax2.set_ylabel("tiempo (s)", color=AZUL, fontsize=8)
-        ax2.set_ylim(9.6, 11.8)  # misma escala en todos: un efecto pequeño se ve pequeño
+        ax2.set_ylim(t_lo, t_hi)
         ax2.grid(False)
         ax.set_title(p)
-        mejor = df.loc[df[df.ok == 1].tiempo_s.idxmin()]
         ax.axvline(mejor[p], c=NEGRO, ls=":", lw=1)
     axs.flat[-1].axis("off")
     axs.flat[-1].text(0.05, 0.5, "verde: probabilidad de completar\nazul: tiempo de las vueltas completas\n"
                       "punteado: vuelta más rápida\n\n(dependencia parcial de un bosque\naleatorio: efecto medio del\n"
                       "parámetro dejando el resto\ncomo en los datos)", fontsize=9, va="center")
-    fig.suptitle("Efecto medio de cada parámetro sobre la fiabilidad y sobre el tiempo")
+    fig.suptitle(f"Efecto medio de cada parámetro sobre la fiabilidad y sobre el tiempo ({reg['nombre']})")
     fig.tight_layout()
-    fig.savefig(FIG / "03_dependencia_parcial.png")
+    fig.savefig(FIG / f"03_dependencia_parcial{suf}.png")
     plt.close(fig)
 
     # Interacciones 2D sobre P(completar)
@@ -274,13 +301,14 @@ def importancia(df):
         ax.set_xlim(xa.min(), xa.max())
         ax.set_ylim(xb.min(), xb.max())
         ax.grid(False)
-    fig.suptitle("Interacciones: probabilidad de completar según pares de parámetros (puntos = vueltas completas)")
+    fig.suptitle(f"Interacciones: probabilidad de completar según pares de parámetros ({reg['nombre']}; "
+                 "puntos = vueltas completas)")
     fig.tight_layout()
-    fig.savefig(FIG / "04_interacciones.png")
+    fig.savefig(FIG / f"04_interacciones{suf}.png")
     plt.close(fig)
 
     # Importancia con magnitudes físicas en lugar de los parámetros crudos
-    print("\nCon magnitudes físicas derivadas (v3):")
+    print(f"\nCon magnitudes físicas derivadas ({reg['nombre']}):")
     fis = ["v_max", "v_curva", "v_min", "L_max", "kp_ef", "ganancia_lazo", "td", "tau_d", "k_ff", "k_hor"]
     for nombre, sub, col, clas in [("P(completar)", d, "ok", True), ("tiempo", d[d.ok == 1], "tiempo_s", False)]:
         _, imp2, cal = _rf_importancia(sub[fis], sub[col], clas)
@@ -291,10 +319,10 @@ def importancia(df):
 
 
 # ---------------------------------------------------------------- 4. frontera
-def frontera(df):
-    titulo("4. COMPROMISO VELOCIDAD ↔ FIABILIDAD")
-    d = df[df.estudio.str.startswith("simple_v3")].copy()
-    bins = [0, 30, 35, 40, 44, 48, 51, 54, 56, 58, 60, 70]
+def frontera(df, reg):
+    titulo(f"4. COMPROMISO VELOCIDAD ↔ FIABILIDAD · {reg['nombre']}")
+    d = del_regimen(df, reg)
+    bins = reg["tramos"]
     d["tramo"] = pd.cut(d.v_max, bins)
     t = d.groupby("tramo", observed=True).agg(
         n=("ok", "size"), completas=("ok", "mean"),
@@ -317,11 +345,11 @@ def frontera(df):
     fig, axs = plt.subplots(1, 3, figsize=(15, 4.5))
     ax = axs[0]
     ax.scatter(ok.v_max, ok.tiempo_s, s=6, c=AZUL, alpha=0.5)
-    vv = np.linspace(25, 62, 50)
+    vv = np.linspace(max(ok.v_max.min(), 20), ok.v_max.max(), 50)
     ax.plot(vv, 430 / vv, c=GRIS, ls="--", label="430 m / v_max (sin frenar nunca)")
     ax.set_xlabel("v_max")
     ax.set_ylabel("tiempo (s)")
-    ax.set_ylim(8.5, 16)
+    ax.set_ylim(430 / ok.v_max.max() - 0.3, ok.tiempo_s.quantile(0.9))
     ax.legend()
     ax.set_title("Tiempo de las vueltas completas")
     ax = axs[1]
@@ -337,8 +365,9 @@ def frontera(df):
     ax.set_xlabel("distancia recorrida al fallar (m)")
     ax.set_ylabel("fallos")
     ax.set_title("Dónde fallan (distancia desde la salida)")
+    fig.suptitle(reg["nombre"])
     fig.tight_layout()
-    fig.savefig(FIG / "05_frontera.png")
+    fig.savefig(FIG / f"05_frontera{reg['sufijo']}.png")
     plt.close(fig)
     h, e = np.histogram(ko.distancia_m, bins=np.arange(0, 440, 10))
     print("\nFallos por tramo de 10 m (los 6 tramos con más):")
@@ -353,7 +382,8 @@ def tendencia(df):
     ok = df[(df.ok == 1)].copy()
     # «buenos» = el 15 % más rápido dentro de cada tramo de v_max y de cada régimen de w_max
     # (w_max = 6 hasta simple_v3, 12 en simple_v4): así no se mezclan comportamientos distintos
-    ok["tramo"] = pd.cut(ok.v_max, [0, 20, 25, 30, 35, 40, 44, 48, 51, 54, 57, 62, 66, 70, 73, 75, 77, 80, 90])
+    ok["tramo"] = pd.cut(ok.v_max, [0, 20, 25, 30, 35, 40, 44, 48, 51, 54, 57, 62, 66, 70, 73, 75, 77, 80, 84, 88, 91,
+                                       94, 97, 105])
     corte = ok.groupby(["w_max", "tramo"], observed=True).tiempo_s.transform(lambda s: s.quantile(0.15))
     buenos = ok[ok.tiempo_s <= corte]
     cols = PARAMS[1:] + ["L_max", "kp_ef", "ganancia_lazo", "tau_d"]
@@ -384,7 +414,7 @@ def tendencia(df):
         ax.set_xlabel("v_max", fontsize=8)
     axs.flat[-1].axis("off")
     axs.flat[-1].text(0.0, 0.5, "gris: vueltas completas\nazul: 15 % más rápido, w_max = 6\n(simple_v1–v3)\n"
-                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4)\nlíneas: medianas por tramo",
+                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4–v5)\nlíneas: medianas por tramo",
                       fontsize=10, va="center")
     fig.suptitle("Tendencia: hacia dónde se mueven los parámetros buenos al subir la velocidad")
     fig.tight_layout()
@@ -399,8 +429,12 @@ def barridos():
     if not rutas:
         print("No hay barridos.")
         return
-    fig, axs = plt.subplots(1, len(rutas), figsize=(6.5 * len(rutas), 4.5), squeeze=False)
-    for ax, ruta in zip(axs[0], rutas):
+    ncol = min(len(rutas), 4)
+    nfil = -(-len(rutas) // ncol)
+    fig, axs = plt.subplots(nfil, ncol, figsize=(6.5 * ncol, 4.5 * nfil), squeeze=False)
+    for ax in axs.flat[len(rutas):]:
+        ax.axis("off")
+    for ax, ruta in zip(axs.flat, rutas):
         b = pd.read_csv(ruta)
         param = ruta.stem.split("_", 1)[1].rsplit("_", 1)[0]
         g = b.groupby("valor").agg(n=("completada", "size"), ok=("completada", "mean"),
@@ -422,7 +456,8 @@ def barridos():
         ax2.plot(x, g.t_min, c=AZUL, ls=":", marker=".", label="mínimo")
         ax2.set_ylabel("tiempo de las completas (s)", color=AZUL)
         ax2.legend(loc="upper right", fontsize=8)
-        fijo = (f"w_max = {b.w_max.iloc[0]:g}" if param == "v_max" else f"v_max = {b.v_max.iloc[0]:.1f}")
+        fijo = (f"w_max = {b.w_max.iloc[0]:g}, k_hor = {b.k_hor.iloc[0]:.3g}" if param == "v_max"
+                else f"v_max = {b.v_max.iloc[0]:.1f}")
         hora = ruta.stem.rsplit("_", 1)[1]
         ax.set_title(f"{param} con {fijo}  ({hora[6:8]}/{hora[4:6]} {hora[9:11]}:{hora[11:13]})", fontsize=10)
     fig.suptitle("Barridos: fiabilidad y tiempo según el valor del parámetro")
@@ -487,7 +522,7 @@ def telemetria(df):
             print(f"w_max {wm:g} · chicane {zona} (v_max ≥ 45): {int(z[f'muere_{zona}'].sum())} fallos de {len(z)} "
                   f"pasos; tiempo con w saturada: {g.get(0, np.nan):.0%} si pasa, {g.get(1, np.nan):.0%} si choca")
     print(f"Vueltas con telemetría (v_max ≥ 25): {len(T)} ({T.ok.sum()} completas, {len(C)} fallidas)")
-    T["tramo"] = pd.cut(T.v_max, [25, 35, 45, 50, 54, 57, 62, 70, 76, 90])
+    T["tramo"] = pd.cut(T.v_max, [25, 35, 45, 50, 54, 57, 62, 70, 76, 84, 90, 96, 105])
     cols = ["cuota_p", "cuota_d", "cuota_ff", "cuota_hor", "sat_w", "e_cerca_perdido", "e_ctl_rms",
             "v_min_vuelta", "dt_med", "dt_p99"]
     print("\nVueltas completas, por tramo de v_max (cuota = parte de Σ|término| que aporta cada uno):")
@@ -534,12 +569,13 @@ def telemetria(df):
     return T, C
 
 
-def palancas(df):
-    titulo("7. LAS DOS PALANCAS DE LA FIABILIDAD EN RÉGIMEN RÁPIDO (v_max ≥ 54)")
-    f = df[(df.v_max >= 54) & df.estudio.str.startswith("simple_v3")].copy()
+def palancas(df, reg):
+    vr = reg["palancas_desde"]
+    titulo(f"7. LAS DOS PALANCAS DE LA FIABILIDAD EN RÉGIMEN RÁPIDO (v_max ≥ {vr}) · {reg['nombre']}")
+    f = del_regimen(df, reg)
+    f = f[f.v_max >= vr]
     tabs = {}
-    for col, cortes in [("k_v_curva", [0, 3, 4, 5, 6, 7, 8, 10, 15]),
-                        ("k_hor", [0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12, 1])]:
+    for col, cortes in [("k_v_curva", reg["cortes_kvc"]), ("k_hor", reg["cortes_khor"])]:
         f["b"] = pd.cut(f[col], cortes)
         t = f.groupby("b", observed=True).agg(
             n=("ok", "size"), completas=("ok", "mean"),
@@ -568,9 +604,9 @@ def palancas(df):
             ax.text(i, 2, f"n={n}", ha="center", fontsize=7)
     axs[0].set_title("Cuánto frenar en curva: fiabilidad a cambio de tiempo")
     axs[1].set_title("Banda del horizonte: hay un punto óptimo")
-    fig.suptitle("Régimen rápido (v_max ≥ 54)")
+    fig.suptitle(f"Régimen rápido (v_max ≥ {vr}) · {reg['nombre']}")
     fig.tight_layout()
-    fig.savefig(FIG / "08_palancas.png")
+    fig.savefig(FIG / f"08_palancas{reg['sufijo']}.png")
     plt.close(fig)
 
 
@@ -579,11 +615,13 @@ def main():
     resumen = {}
     resumen["evolucion"] = evolucion(df)
     resumen["ruido"] = ruido(df)
-    imp, rho = importancia(df)
-    frontera(df)
+    for reg in REGIMENES:
+        importancia(df, reg)
+        frontera(df, reg)
     tendencia(df)
     telemetria(df)
-    palancas(df)
+    for reg in REGIMENES:
+        palancas(df, reg)
     barridos()
     titulo("MEJORES VUELTAS INDIVIDUALES")
     print(df[df.ok == 1].nsmallest(10, "tiempo_s")[["estudio", "tiempo_s", "J", "e_rms", "cambios_w_s"] + PARAMS]

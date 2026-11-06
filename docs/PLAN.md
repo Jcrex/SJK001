@@ -546,6 +546,38 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 3. Mirar la curva de los ~350 m en la telemetría: es donde fallan casi todas las vueltas a ≥ 88 m/s.
 4. Regenerar el macroanálisis y probar otros circuitos (pasos 4–5 de §5.10).
 
+### 5.12 `simple_v5` y siguiente sesión (2026-11-06, cierre a las 17:00)
+
+**Estado:**
+- **Mejor:** 5.25 s en 4/4 (`simple_v5` #775, v_max = 95.5, k_hor = 0.044, k_v_curva = 2.63), preset
+  `w12_v95_n775`. Mejor vuelta: 5.18 s. **Mejor fiable con 20 vueltas:** 5.76 s en 20/20 (preset `w12_v86_kh045`).
+- **Optimizador:** `simple_v5` llegó a `simple_v5_g6` (1338 ensayos, ventana de v_max en 93–102). A ≥ 96 m/s completa
+  menos de la mitad de las vueltas. Dejarlo parado al empezar.
+- **Límite:** la chicane norte (350–360 m), con el 67 % de los fallos. El giro va saturado en w_max = 12 la mitad del
+  tiempo en esa curva (ESTUDIO_PID.md §15).
+- **Macroanálisis:** regenerado con los 3875 ensayos. `macro_analisis.py` ya incluye `simple_v5` y calcula las figuras
+  02–05 y 08 también para w_max = 12 (sufijo `_w12`). La tarea pendiente de §5.10, paso 4, está hecha, salvo
+  `03_dependencia_parcial_w12.png`: se generó con una escala de tiempo que oculta las curvas. El script ya está
+  corregido, pero hay que volver a ejecutar `macro_analisis.py` (se cortó al apagar el PC).
+- **Procesos:** al cerrar seguían en marcha el panel, el optimizador y el contenedor `robotics`.
+
+**Para arrancar:**
+1. Si el contenedor no está: `docker run …` (README §5). Después, `tools/panel.sh`.
+2. En unibotics.org (Follow Line, simulador local), pegar `src/follow_line.py` y pulsar play.
+3. Comprobar una vuelta con el preset `w12_v95_n775` (~5.25 s).
+
+**Siguientes pasos, por orden:**
+1. **Barrido de `w_max` sobre #775** (20 vueltas por valor):
+   `tools/barrido.sh --base w12_v95_n775 --param w_max --valores 12,14,16,18`
+2. **Barrido de `k_v_curva` sobre #775**, por si basta con frenar algo más en la chicane norte:
+   `tools/barrido.sh --base w12_v95_n775 --param k_v_curva --valores 2.6,2.8,3.0,3.2 --fijar w_max=<el mejor del paso 1>`
+3. **Estudio `simple_v6`:** copiar `config_v5.json` con el w_max y la ventana de k_v_curva que salgan de los barridos,
+   v_max desde ~93, e importar `simple_v5` solo si w_max no cambia.
+4. **Confirmar el mejor con 20 vueltas** antes de anotarlo como fiable: a ≥ 92 m/s solo el 64 % de los que completan
+   la primera vuelta completan las repeticiones.
+5. Pendiente de antes: escalar `k_hor` con la velocidad solo si su óptimo vuelve a bajar (de 88 a 96 m/s se mantuvo en
+   0.040–0.044), y probar otros circuitos.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -564,3 +596,4 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 | 2026-11-06 | 3 | **5.92 s** (mediana, 18/20; mismos parámetros con v_max = 82) | Barrido de v_max 76–86 (20 vueltas por valor). Tiempo ≈ 426/(0.94·v_max) + 0.35 s (5.9) |
 | 2026-11-06 | 3 | 6.35 s (w_max = 20, v_max = 75.1; −0.02 s frente a w_max = 12) | Barrido de w_max 12–20 a 75 m/s: sin cambio de fiabilidad. Nuevo límite: la banda del horizonte sin filtrar a ≥ 80 m/s (5.9) |
 | 2026-11-06 | 3 | **5.76 s** (mediana, 20/20; v_max = 86, k_hor = 0.045) | Barrido de k_hor a 84 (óptimo 0.04–0.05) y de v_max 84–90 (5.56 s a 90, 15/20). Filtro de e_hor descartado (0/20). Estudio simple_v5 lanzado (5.11) |
+| 2026-11-06 | 3 | **5.25 s, 4 de 4** (#775 de simple_v5: v_max = 95.5, k_hor = 0.044, k_v_curva = 2.63); mejor vuelta 5.18 s | 1338 ensayos (g0–g6). Techo en la chicane norte (67 % de los fallos, giro saturado la mitad del tiempo). Macroanálisis regenerado con figuras para w_max = 12 (5.12) |

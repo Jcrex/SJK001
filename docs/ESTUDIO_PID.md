@@ -1,11 +1,12 @@
 # Macroanálisis del PID y del optimizador
 
-> **Actualización del 2026-11-06, 02:40.** Las secciones 0–9 analizan `simple_v1`–`v3` (w_max = 6). Después
+> **Actualización del 2026-11-06, 17:00.** Las secciones 0–9 analizan `simple_v1`–`v3` (w_max = 6). Después
 > vinieron el barrido de `w_max` (§10), el estudio `simple_v4` con w_max = 12, de 8.95 a 6.4 s (§11), el barrido de
-> `v_max`, que llega a 5.92 s en 18 de 20 vueltas (§12), y el barrido de `w_max` a 75 m/s, que señala el horizonte como
-> el nuevo límite (§13). Las figuras de `docs/img/estudio/` se han regenerado con todos los datos: la
-> evolución (01), la tendencia (06, en naranja `simple_v4`), la telemetría (07) y los tres barridos (09). Las figuras de
-> importancia, dependencia parcial, interacciones, frontera y palancas (02–05, 08) siguen siendo solo de `simple_v3`.
+> `v_max` (§12), el barrido de `w_max` a 75 m/s, que señala el horizonte (§13), los barridos de `k_hor` y `v_max` y el
+> filtro del horizonte descartado (§14), y el estudio `simple_v5`, que llega a 5.25 s a 95.5 m/s (§15). Todas las
+> figuras de `docs/img/estudio/` se han regenerado con los 3875 ensayos. Las de importancia, dependencia parcial,
+> interacciones, frontera y palancas existen ahora en dos versiones: sin sufijo para `simple_v3` (w_max = 6) y con
+> `_w12` para `simple_v4`–`v5` (w_max = 12).
 
 **Foto del 2026-11-06 a las 00:15**, con el optimizador todavía en marcha (`simple_v3_g6`).
 Datos: **2076 ensayos** de `simple_v1`, `simple_v2` y `simple_v3` (g0–g6), con 1295 vueltas completas y 781 fallos
@@ -530,7 +531,7 @@ Base: preset `optuna_simple_v4` (#194) con w_max = 12, 20 vueltas por valor en o
 El tiempo sigue bajando en proporción a 1/v_max. 9 de los 11 fallos son choques en la curva de los ~350 m.
 90 % frente a 100 % con 20 vueltas no es una diferencia significativa.
 
-### Filtro de `e_hor` a v_max = 88, k_hor = 0.064 (`logs/optuna/barrido_tau_hor_20261106-B.csv`)
+### Filtro de `e_hor` a v_max = 88, k_hor = 0.064 (`logs/optuna/barrido_tau_hor_20261106-140741.csv`)
 
 Se probó un paso bajo de primer orden, `e_f += dt/(τ+dt)·(e_hor − e_f)`, con un parámetro nuevo `tau_hor`:
 
@@ -552,3 +553,102 @@ k_hor alto es falta de margen de ganancia. El filtro se quitó del controlador.
 - `k_hor` debe bajar al subir la velocidad, no filtrarse. El estudio `simple_v5` (`config_v5.json`) busca
   v_max en [84, 92] con k_hor en [0.035, 0.06]. Si el óptimo de k_hor sigue cayendo con v_max, el siguiente paso es
   escalarlo dentro de la vuelta (k_hor / (1 + k·v)), como `kv_kp` con Kp.
+
+## 15. `simple_v5`: de 5.76 s a 5.25 s, y el techo de la chicane norte (2026-11-06, 14:20–16:48)
+
+Datos: **1338 ensayos** de `simple_v5` (g0–g6) con `config_v5.json`. Junto con `simple_v4` forman el régimen
+w_max = 12 (1639 ensayos), que ahora tiene sus propias figuras con sufijo `_w12`.
+
+### Evolución
+
+| Generación | Ensayos | Completas | v_max | Mejor vuelta |
+|---|---|---|---|---|
+| g0 | 50 | 50 % | 84–92 | 5.43 |
+| g1 | 84 | 80 % | 88.7–94 | 5.31 |
+| g2–g3 | 56 | 60–73 % | 89–96.5 | 5.29 |
+| g4 | 856 | 64 % | 92.3–96.7 | 5.22 |
+| g5–g6 | 320 | 50–62 % | 93.5–101 | **5.18** |
+
+La ventana móvil subió v_max sola de [84, 92] a [93, 102]. El mejor por J media de sus repeticiones es el
+**#775: 5.25 s en 4 de 4** (v_max = 95.5, k_v_curva = 2.63, kp = 0.0103, td = 0.078, k_hor = 0.044), guardado como
+preset `w12_v95_n775`. Ningún candidato llegó a 5 repeticiones: el modelo seguía encontrando otros parecidos.
+
+### Frontera velocidad ↔ fiabilidad
+
+![Frontera w_max = 12](img/estudio/05_frontera_w12.png)
+
+| v_max | Ensayos | Completas | t mediano | v media / v_max |
+|---|---|---|---|---|
+| 88–90 | 58 | 86 % | 5.56 | 0.86 |
+| 90–92 | 92 | 65 % | 5.49 | 0.86 |
+| 92–94 | 174 | 78 % | 5.35 | 0.85 |
+| 94–96 | 907 | 58 % | 5.30 | 0.85 |
+| 96–98 | 127 | 49 % | 5.24 | 0.85 |
+
+- **Rendimientos decrecientes:** de 94 a 96 m/s la mediana solo baja 0.06 s, mientras la fiabilidad cae del 78 al
+  49 %. El coche va al 85 % de v_max de media (al 88 % a 75 m/s): a esta velocidad frena más en curva.
+- **Una sola curva:** el **67 % de los fallos** son entre 350 y 360 m, en la chicane norte. Le siguen 300–310 m (8 %) y
+  330–340 m (6 %).
+- **Repetibilidad:** a v_max ≥ 92, de los parámetros que completan la primera vuelta solo el 64 % completa las
+  repeticiones (72/113). A 70–84 m/s era el 96 %. Un 3 de 3 o un 4 de 4 a 95 m/s no garantiza fiabilidad.
+
+### Qué parámetros importan con w_max = 12
+
+![Importancia w_max = 12](img/estudio/02_importancia_w12.png)
+![Dependencia parcial w_max = 12](img/estudio/03_dependencia_parcial_w12.png)
+![Interacciones w_max = 12](img/estudio/04_interacciones_w12.png)
+
+- **Tiempo:** v_max explica casi todo (98 %, R² = 0.99). Con magnitudes físicas, se reparte entre la velocidad en curva
+  `v_curva` (58 %) y v_max (41 %).
+- **Fiabilidad:** v_max (45 %) y k_v_curva (18 %). Con magnitudes físicas, `v_curva` sola explica el 54 %. A
+  v_max ≥ 90, el modelo apenas predice qué vuelta completa (AUC = 0.61): dentro de la ventana, los parámetros explican
+  poco y domina el azar de la vuelta.
+- **Oscilación:** la marca k_hor (34 %), como en `simple_v3`.
+
+### Palancas a v_max ≥ 90
+
+![Palancas w_max = 12](img/estudio/08_palancas_w12.png)
+
+| k_v_curva | Ensayos | Completas | t mediano |
+|---|---|---|---|
+| 1.5–2.2 | 21 | 29 % | 5.46 |
+| 2.2–2.4 | 38 | 58 % | 5.45 |
+| 2.4–2.6 | 553 | 55 % | 5.30 |
+| 2.6–2.8 | 656 | 64 % | 5.31 |
+| 2.8–3.0 | 37 | **78 %** | 5.34 |
+
+Frenar algo más en curva (k_v_curva 2.8–3.0) sube la fiabilidad del 55–64 al 78 % y solo cuesta ~0.03 s. Hay pocos
+ensayos en ese tramo porque la ventana se quedó en torno a 2.6. En cambio, k_hor entre 0.035 y 0.05 no cambia la
+fiabilidad (59–66 %).
+
+### Tendencia del PID al pasar de 75 a 96 m/s
+
+![Tendencia](img/estudio/06_tendencia.png)
+
+Con w_max = 12, los buenos parámetros se mueven así al subir v_max (Spearman): la mirada adelantada `L_max` (+0.86, de
+8.5 a 11.8 m), la ganancia del lazo (+0.81), kp (+0.74, de 0.0085 a 0.0103) y t_mirar (+0.66) suben; td (−0.73),
+z_mirar_min (−0.69), n_filtro (−0.66), k_hor (−0.45, de 0.064 a 0.044) y v_min (−0.45) bajan. El PID se vuelve más
+proporcional, con menos D, y mira más lejos.
+
+### Telemetría de la chicane norte
+
+![Telemetría](img/estudio/07_telemetria.png)
+
+Comparando 723 vueltas completas y 553 fallidas a v_max ≥ 93 tramo a tramo (300–380 m):
+
+- **El giro va saturado (|w| = 12) el 45–58 % del tiempo** entre 320 y 370 m, en las vueltas que pasan y en las que
+  chocan. El coche va ~180 px desviado de la línea en toda la curva.
+- En las vueltas que chocan, el coche llega más lento (68–75 m/s frente a 80–82) y más desviado (e_ctl 185–213 px
+  frente a 167–190). El horizonte aporta menos giro (3.7–4.6 rad/s frente a 4.4–5.6).
+- Como la saturación es igual de alta en los dos casos, **no está probado que w_max sea la causa** de los choques. Lo
+  que sí muestra es que, con w_max = 12, el coche no puede girar más fuerte en esa curva. El simulador obedece hasta
+  ~16.5 rad/s (§13), así que hay margen para comprobarlo.
+
+### Conclusión y siguiente
+
+- Mejor: **5.25 s en 4/4** (#775, v_max = 95.5). Mejor fiable con 20 vueltas: 5.76 s en 20/20 (v_max = 86, §14).
+- El techo es la chicane norte a ≥ 95 m/s. Hay dos hipótesis, y cada una se comprueba con un barrido sobre #775:
+  1. **`w_max` = 12, 14, 16 y 18:** si el problema es que el coche no puede girar más fuerte.
+  2. **`k_v_curva` = 2.6, 2.8, 3.0 y 3.2:** si basta con frenar algo más en curva (la palanca de la tabla de arriba).
+- Antes de dar por bueno el #775, confirmarlo con 20 vueltas: a esta velocidad, 4 de 4 no basta.
+
