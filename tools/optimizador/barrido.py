@@ -113,7 +113,8 @@ async def correr(a, cfg, base, valores, ruta):
                         print("[barrido] el panel se cerró; reconectando...", flush=True)
                         await ens.conectar(sesion)
                         continue
-                    if motivo in ("sin_respuesta", "reinicio_fallido", "interrumpido", "interferencia"):
+                    # timeout: el controlador no mandó nada en t_max_ensayo (play cortado o web recargada)
+                    if motivo in ("sin_respuesta", "reinicio_fallido", "interrumpido", "interferencia", "timeout"):
                         print(f"[barrido] {a.param}={v:g} descartada ({motivo}); se repite en 5 s", flush=True)
                         await asyncio.sleep(5)
                         continue

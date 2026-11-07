@@ -11,9 +11,10 @@ Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 
 | Giro máximo `w_max` de 6 a 12 rad/s y estudio nuevo `simple_v4` (v ≈ 75) | 6.4 s (3 de 3) · mejor vuelta 6.25 s |
 | Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | 5.92 s (mediana, 18 de 20 vueltas) |
 | Barridos de `k_hor` (0.045 a 84 m/s) y de `v_max` (v = 86) | 5.76 s (mediana, 20 de 20) · 5.56 s a v = 90 (15 de 20) |
-| Estudio `simple_v5` (v ≈ 95.5, 1338 ensayos) | **5.25 s** (4 de 4) · mejor vuelta 5.18 s |
+| Estudio `simple_v5` (v ≈ 95.5, 1338 ensayos) | 5.25 s (4 de 4) · mejor vuelta 5.18 s |
+| Barridos sobre #775: `w_max` = 14 y `k_v_curva` bajo | **5.19 s** (mediana, 34 de 40) · **5.12 s** con k_v_curva = 1.2 (15 de 20) · mejor vuelta 5.11 s |
 
-Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.25 s son 4.90 s de conducción.
+Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.19 s son 4.84 s de conducción.
 
 El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md). El análisis de todos los ensayos (qué parámetros importan, hacia dónde tiende el PID y qué limita la vuelta) está en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 
@@ -159,6 +160,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 | `tools/optimizador/config.json` | `simple_v3` | w_max = 6. 1790 ensayos y 6 generaciones; mejor resultado 8.95 s (3/3) |
 | `tools/optimizador/config_v4.json` | `simple_v4` | w_max = 12, sin importar `simple_v3` (sus fallos se debían a la saturación) y ventanas centradas en su mejor. 273 ensayos, 94 % de vueltas completas |
 | `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces. 1338 ensayos (g0–g6): la ventana de v_max subió sola hasta 93–102, con 5.25 s en 4 de 4 a v_max = 95.5 |
+| `tools/optimizador/config_v6.json` | `simple_v6` | w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. Semillas `w14_v95_kvc18` y `w14_v95_kvc12` (en marcha) |
 
 `tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
 
@@ -199,16 +201,17 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ## 4. Mejores parámetros
 
-Ensayo #775 de `simple_v5_g4`: **5.25 s de mediana en 4 de 4 vueltas** (J media 6.65), guardado como preset `w12_v95_n775`. Ojo: a ≥ 92 m/s, de los parámetros que completan la primera vuelta solo el 64 % completa las repeticiones, así que 4 de 4 todavía no garantiza fiabilidad (ESTUDIO_PID.md §15). El mejor fiable medido con 20 vueltas sigue siendo **5.76 s en 20 de 20** (`simple_v4` #194 con v_max = 86 y k_hor = 0.045, preset `w12_v86_kh045`).
+#775 de `simple_v5` con **w_max = 14 y k_v_curva = 1.8: 5.19 s de mediana en 34 de 40 vueltas** (85 %), preset `w14_v95_kvc18`. Con k_v_curva = 1.2 baja a **5.12 s**, pero completa 15 de 20 (preset `w14_v95_kvc12`). Barridos en ESTUDIO_PID.md §16. El estudio `simple_v6` sigue a partir de aquí.
 
 | Parámetros | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| #775 con w_max 14 y k_v_curva 1.8 (5.19 s, 34/40) | 95.5 | 1.8 | 9.79 | 0.0103 | 0.0782 | 10.3 | 0.657 | 0.0038 | 0.124 | 0.385 | 0.0438 | 14 | 0 |
 | `simple_v5` #775 (5.25 s, 4/4) | 95.5 | 2.63 | 9.79 | 0.0103 | 0.0782 | 10.3 | 0.657 | 0.0038 | 0.124 | 0.385 | 0.0438 | 12 | 0 |
 | `simple_v4` #194 en el barrido (5.76 s, 20/20) | 86 | 2.24 | 10.5 | 0.00860 | 0.0858 | 12.1 | 0.598 | 0.0033 | 0.105 | 0.462 | 0.045 | 12 | 0 |
 
 **Qué limita ahora la vuelta:**
 
-- **La chicane norte (350–360 m).** A ≥ 92 m/s concentra el 67 % de los fallos. Allí el giro va saturado en w_max = 12 la mitad del tiempo, tanto en las vueltas que pasan como en las que chocan, y el coche va ~180 px desviado de la línea. Por encima de 96 m/s se completa menos de la mitad de las vueltas (`docs/ESTUDIO_PID.md` §15).
+- **La primera curva (~43 m y ~72 m) y la chicane norte (350–360 m).** Con w_max = 12 la chicane norte concentraba el 67 % de los fallos por saturación del giro; con w_max = 14 casi deja de fallar, pero a partir de 16 el coche se pasa en la primera curva. Esa curva va al límite en todas las vueltas: a 95 m/s el coche solo la ve ~2 fotogramas antes, y el resultado depende del fotograma en que la detecta. Si se frena poco en curva (k_v_curva < 1.6), vuelve a fallar la chicane (`docs/ESTUDIO_PID.md` §15–16).
 - **La velocidad.** A 95 m/s el coche va al 85 % de `v_max` de media (el 94 % a 75), porque frena más en curva. De 94 a 96 m/s la mediana solo baja 0.06 s.
 - **La cámara.** Ve la línea a 12.7 m como mucho: 3 fotogramas de anticipación a 86 m/s y 2.7 a 95.
 - **La banda del horizonte.** Su ganancia buena baja con la velocidad (0.064 a 75 m/s, 0.04–0.045 a 84–96). Filtrar `e_hor` no sirve: retrasarlo un fotograma vuelve inestable el giro (0 de 20 vueltas, `docs/ESTUDIO_PID.md` §14).
@@ -226,8 +229,8 @@ docker run -d --rm --name robotics --device /dev/dri --gpus all \
 tools/panel.sh                                   # panel en http://localhost:8050
 # En unibotics.org (ejercicio Follow Line, simulador local): pegar src/follow_line.py y pulsar play.
 # El puerto 7163 es la conexión de la web con el contenedor, no una página.
-tools/optimizar.sh tools/optimizador/config_v5.json   # optimizador (opcional)
-tools/optimizar.sh --informe simple_v5                # informe del estudio
+tools/optimizar.sh tools/optimizador/config_v6.json   # optimizador (opcional)
+tools/optimizar.sh --informe simple_v6                # informe del estudio
 tools/barrido.sh --help                               # barrido de un parámetro
 uv run --with pandas --with scikit-learn --with matplotlib --with scipy \
   python tools/optimizador/macro_analisis.py          # macroanálisis → docs/img/estudio/

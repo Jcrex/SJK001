@@ -578,6 +578,25 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 5. Pendiente de antes: escalar `k_hor` con la velocidad solo si su óptimo vuelve a bajar (de 88 a 96 m/s se mantuvo en
    0.040–0.044), y probar otros circuitos.
 
+### 5.13 Barridos sobre #775 y `simple_v6` (2026-11-07)
+
+**Hecho:**
+- Barrido de `w_max` sobre #775: **14 es el mejor** (13/20). 12 falla en la chicane norte (saturación), 16–18 en la
+  primera curva (~43 m).
+- Barridos de `k_v_curva` con w_max = 14 (1.2–3.2): frenar menos acelera y no pierde fiabilidad hasta ~1.6.
+  **5.19 s en 34/40** con 1.8 (preset `w14_v95_kvc18`) y **5.12 s en 15/20** con 1.2 (preset `w14_v95_kvc12`).
+  Detalle en ESTUDIO_PID.md §16.
+- `macro_analisis.py` regenerado (la figura `03_dependencia_parcial_w12.png` ya sale bien) y corregido para ignorar
+  barridos sin vueltas. `barrido.py` repite las vueltas con «timeout» (play cortado), igual que las interrumpidas.
+- Lanzado **`simple_v6`** (`config_v6.json`): w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100], ±20 %
+  alrededor de #775 en el resto, semillas `w14_v95_kvc18` y `w14_v95_kvc12`.
+
+**Siguientes pasos:**
+1. Dejar correr `simple_v6` y revisarlo con `tools/optimizar.sh --informe simple_v6`.
+2. Confirmar su mejor con un barrido de 20 vueltas (por ejemplo, de `v_max` alrededor de su valor) antes de darlo por
+   fiable. Con 20 vueltas, ±10–15 puntos de fiabilidad son ruido: juntar tandas para comparar.
+3. Primera curva: probar a ver la curva antes (`t_mirar`, `z_mirar_min`) si sigue siendo el fallo principal.
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -597,3 +616,4 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 | 2026-11-06 | 3 | 6.35 s (w_max = 20, v_max = 75.1; −0.02 s frente a w_max = 12) | Barrido de w_max 12–20 a 75 m/s: sin cambio de fiabilidad. Nuevo límite: la banda del horizonte sin filtrar a ≥ 80 m/s (5.9) |
 | 2026-11-06 | 3 | **5.76 s** (mediana, 20/20; v_max = 86, k_hor = 0.045) | Barrido de k_hor a 84 (óptimo 0.04–0.05) y de v_max 84–90 (5.56 s a 90, 15/20). Filtro de e_hor descartado (0/20). Estudio simple_v5 lanzado (5.11) |
 | 2026-11-06 | 3 | **5.25 s, 4 de 4** (#775 de simple_v5: v_max = 95.5, k_hor = 0.044, k_v_curva = 2.63); mejor vuelta 5.18 s | 1338 ensayos (g0–g6). Techo en la chicane norte (67 % de los fallos, giro saturado la mitad del tiempo). Macroanálisis regenerado con figuras para w_max = 12 (5.12) |
+| 2026-11-07 | 3 | **5.19 s** (mediana, 34/40; #775 con w_max = 14 y k_v_curva = 1.8) · 5.12 s con k_v_curva = 1.2 (15/20) | Barridos de w_max (14 mejor) y k_v_curva (1.2–3.2) sobre #775. Lanzado simple_v6 (5.13) |

@@ -426,6 +426,7 @@ def tendencia(df):
 def barridos():
     titulo("8. BARRIDOS (un parámetro, resto fijo)")
     rutas = sorted(OPT.glob("barrido_*.csv"), key=lambda r: r.stem.rsplit("_", 1)[1])  # por fecha
+    rutas = [r for r in rutas if len(pd.read_csv(r))]  # un barrido recién lanzado aún no tiene vueltas
     if not rutas:
         print("No hay barridos.")
         return

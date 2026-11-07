@@ -652,3 +652,58 @@ Comparando 723 vueltas completas y 553 fallidas a v_max ≥ 93 tramo a tramo (30
   2. **`k_v_curva` = 2.6, 2.8, 3.0 y 3.2:** si basta con frenar algo más en curva (la palanca de la tabla de arriba).
 - Antes de dar por bueno el #775, confirmarlo con 20 vueltas: a esta velocidad, 4 de 4 no basta.
 
+
+## 16. Barridos sobre #775: w_max = 14 y k_v_curva bajo (2026-11-07, 21:45–22:25)
+
+Datos: 6 barridos de 20 vueltas por valor sobre el preset `w12_v95_n775` (v_max = 95.5), en
+`logs/optuna/barrido_*_20261107-*.csv`. Se comprueban las dos hipótesis de §15.
+
+![Barridos](img/estudio/09_barridos.png)
+
+### w_max (hipótesis 1)
+
+| w_max | Completas | Mediana | Fallos en la salida (~43 m) | Fallos en la chicane norte (~350 m) |
+|---|---|---|---|---|
+| 12 | 8/20 (40 %) | 5.31 | 0 | 9 |
+| **14** | **13/20 (65 %)** | **5.24** | 3 | 1 |
+| 16 | 9/20 (45 %) | 5.26 | 9 | 1 |
+| 18 | 7/20 (35 %) | 5.25 | 9 | 3 |
+
+- **Confirmada:** con w_max ≥ 14 la chicane norte casi deja de fallar. La saturación de §15 sí era la causa.
+- Con w_max ≥ 16 aparece otro fallo: choques en la primera curva (~43 m). Esa curva va al límite en todas las vueltas,
+  también en las que terminan (e ≈ −290 px de 320 y giro casi al máximo). A 95 m/s el coche avanza ~3.5 m entre
+  fotogramas y ve la curva solo ~9 m antes, así que el resultado depende del fotograma en que la detecta: si la ve a
+  32–33 m choca 1 de cada 10 veces, a 33–34 m casi 4 de cada 10. El desvío lateral en la recta no influye.
+- **w_max = 14** es el compromiso.
+
+### k_v_curva con w_max = 14 (hipótesis 2, al revés)
+
+Juntando los barridos (algunos valores se midieron dos veces):
+
+| k_v_curva | Completas | Mediana | Mínimo | Dónde falla |
+|---|---|---|---|---|
+| 1.2 | 15/20 (75 %) | **5.12** | **5.11** | chicane norte (305–352 m) |
+| 1.4 | 12/20 (60 %) | 5.14 | 5.11 | chicane y 79–130 m |
+| 1.6 | 13/20 (65 %) | 5.17 | 5.14 | chicane y ~72 m |
+| 1.8 | 34/40 (85 %) | 5.19 | 5.17 | ~72 m y chicane |
+| 2.0 | 18/20 (90 %) | 5.21 | 5.18 | ~72 m |
+| 2.2 | 33/40 (83 %) | 5.23 | 5.20 | ~72 m |
+| 2.4 | 13/20 (65 %) | 5.25 | 5.22 | ~73 m |
+| 2.6 | 31/40 (78 %) | 5.27 | 5.23 | ~43 m |
+| 2.8–3.2 | 36/60 (60 %) | 5.29–5.34 | 5.25–5.29 | casi todo a ~43 m |
+
+- **Frenar más no ayuda:** de 2.6 a 3.2 es más lento y falla más en la primera curva.
+- **Frenar menos acelera** unos 0.02 s por cada 0.2 de k_v_curva, sin un corte claro de fiabilidad hasta 1.2. Por debajo
+  de ~1.6 vuelve a mandar la chicane norte.
+- Es lo contrario que con w_max = 12 (§15: k_v_curva 1.5–2.2 completaba el 29 %): con más giro disponible, el coche ya
+  no necesita frenar tanto en curva.
+- **Ruido entre tandas:** 1.8 dio 20/20 en un barrido y 14/20 en el siguiente. Con 20 vueltas, diferencias de ±10–15
+  puntos de fiabilidad no son significativas; para comparar hay que juntar tandas.
+
+### Conclusión y siguiente
+
+- Mejor rápido: **5.12 s de mediana (15/20)** con k_v_curva = 1.2 (preset `w14_v95_kvc12`). Mejor fiable:
+  **5.19 s (34/40, 85 %)** con k_v_curva = 1.8 (preset `w14_v95_kvc18`). Los dos con w_max = 14 y el resto de #775.
+- Los barridos de un solo parámetro ya dan diferencias del tamaño del ruido. Se lanza `simple_v6` (`config_v6.json`):
+  w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775 en el resto, para que el
+  optimizador ajuste el PID y la mirada adelantada a la chicane norte con k_v_curva bajo.
