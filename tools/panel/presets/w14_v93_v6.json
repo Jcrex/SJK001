@@ -1,0 +1,21 @@
+{
+  "ti": 0.0,
+  "a_sub": 0.0,
+  "a_fren": 0.0,
+  "w_max": 14.0,
+  "v_perdida": 4.0,
+  "reinicio_auto": 1.0,
+  "t_perdida_max": 0.8,
+  "t_atasco": 0.7,
+  "v_max": 93.0,
+  "k_v_curva": 1.69696,
+  "v_min": 7.79264,
+  "kp": 0.01139,
+  "td": 0.06318,
+  "n_filtro": 7.41661,
+  "k_ff": 0.64259,
+  "kv_kp": 0.00054,
+  "t_mirar": 0.11597,
+  "z_mirar_min": 0.36997,
+  "k_hor": 0.0357
+}

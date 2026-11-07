@@ -496,6 +496,7 @@ async def principal(ruta_cfg):
             return texto
 
         hechos = confirmado = 0
+        repetir = int(cfg.get("repetir", 1))  # vueltas seguidas por candidato que completa
         clas = clasificacion(estudio)
         campeon = clas[0]["ensayo"] if clas else None
         while not cfg["max_ensayos"] or hechos < cfg["max_ensayos"]:
@@ -570,7 +571,16 @@ async def principal(ruta_cfg):
             print(f"[opt] {ens.ultimo}  v_max={params.get('v_max')} kp={params.get('kp')} "
                   f"td={params.get('td')} k_ff={params.get('k_ff')} k_hor={params.get('k_hor')}",
                   flush=True)
-            clas = clasificacion(estudio)
+            # Repetición inmediata: si completa, se repite hasta «repetir» veces seguidas;
+            # al primer fallo se deja (su J media ya lo hunde). Así cada candidato bueno
+            # se mide con una tanda y uno malo cuesta una sola vuelta.
+            grupo = tuple(sorted((k, round(v, 5)) for k, v in trial.params.items()))
+            hermanos = [t for t in estudio.trials if t.state == optuna.trial.TrialState.COMPLETE
+                        and tuple(sorted((k, round(v, 5)) for k, v in t.params.items())) == grupo]
+            if (repetir > 1 and datos["completada"] and len(hermanos) < repetir
+                    and all(t.user_attrs.get("completada") for t in hermanos)):
+                estudio.enqueue_trial(dict(grupo), user_attrs={"repeticion": 1})
+            clas = [r for r in clasificacion(estudio) if r["n"] >= repetir]
             if clas and clas[0]["ensayo"] != campeon:
                 b = clas[0]
                 campeon = b["ensayo"]
