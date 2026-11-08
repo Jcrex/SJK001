@@ -1,12 +1,66 @@
 # Macroanálisis del PID y del optimizador
 
-> **Actualización del 2026-11-06, 17:00.** Las secciones 0–9 analizan `simple_v1`–`v3` (w_max = 6). Después
-> vinieron el barrido de `w_max` (§10), el estudio `simple_v4` con w_max = 12, de 8.95 a 6.4 s (§11), el barrido de
-> `v_max` (§12), el barrido de `w_max` a 75 m/s, que señala el horizonte (§13), los barridos de `k_hor` y `v_max` y el
-> filtro del horizonte descartado (§14), y el estudio `simple_v5`, que llega a 5.25 s a 95.5 m/s (§15). Todas las
-> figuras de `docs/img/estudio/` se han regenerado con los 3875 ensayos. Las de importancia, dependencia parcial,
-> interacciones, frontera y palancas existen ahora en dos versiones: sin sufijo para `simple_v3` (w_max = 6) y con
-> `_w12` para `simple_v4`–`v5` (w_max = 12).
+> **Versión final (2026-11-08).** Todas las figuras de `docs/img/estudio/` están regeneradas con los datos completos:
+> **5531 ensayos** de `simple_v1`–`v7`, 15 barridos (1346 vueltas) y la telemetría de 7872 vueltas. Las figuras de
+> importancia, dependencia parcial, interacciones, frontera y palancas existen para los tres regímenes de giro máximo:
+> sin sufijo para `simple_v3` (w_max = 6), `_w12` para `simple_v4`–`v5` y `_w14` para `simple_v6`–`v7`. El resumen
+> final y los parámetros elegidos están justo debajo; el detalle, en §17 y §18. Las secciones 0–9 se escribieron con
+> los datos de `simple_v1`–`v3` (2026-11-06) y conservan sus cifras de entonces, aunque sus figuras ya incluyen todo.
+
+## Resumen final
+
+**Parámetros elegidos** (valores por defecto de `src/follow_line.py`, preset `w14_v93_v6`): **5.29 s de mediana y 63 de
+65 vueltas completas (97 %)** a v_max = 93 m/s con w_max = 14. Es la combinación con mayor fiabilidad demostrada de las
+4599 probadas (§18).
+
+![Decisión](img/estudio/10_decision.png)
+
+### Qué pesa en cada métrica
+
+![Pesos por régimen](img/estudio/11_pesos.png)
+
+Peso de cada parámetro (importancia por permutación de un bosque aleatorio, suma 1), en los tres regímenes de w_max:
+
+| Parámetro | Fiabilidad w6 | w12 | **w14** | Tiempo w6 | w12 | **w14** | Oscilación w6 | w12 | **w14** |
+|---|---|---|---|---|---|---|---|---|---|
+| `v_max` | 0.11 | **0.45** | 0.04 | **0.88** | **0.98** | **0.91** | 0.00 | 0.17 | 0.03 |
+| `k_v_curva` | **0.69** | 0.18 | 0.06 | 0.12 | 0.01 | 0.02 | 0.01 | 0.07 | 0.07 |
+| `k_hor` | 0.14 | 0.05 | **0.14** | 0.00 | 0.00 | 0.00 | **0.92** | 0.33 | 0.34 |
+| `td` | 0.00 | 0.04 | **0.31** | 0.00 | 0.00 | 0.00 | 0.00 | 0.04 | 0.05 |
+| `kp` | 0.00 | 0.04 | 0.11 | 0.00 | 0.00 | 0.00 | 0.00 | 0.04 | 0.09 |
+| `k_ff` | 0.01 | 0.04 | 0.06 | 0.00 | 0.00 | 0.05 | 0.00 | 0.05 | 0.06 |
+| `t_mirar` | 0.03 | 0.04 | 0.07 | 0.00 | 0.00 | 0.00 | 0.05 | 0.05 | 0.07 |
+| `v_min`, `n_filtro`, `z_mirar_min`, `kv_kp` | ≤ 0.01 | ≤ 0.04 | 0.02–0.07 | 0.00 | 0.00 | 0.00 | 0.00 | 0.03–0.09 | 0.06–0.10 |
+| *Calidad del modelo* | *AUC 0.96* | *0.71* | *0.72* | *R² 0.98* | *0.99* | *0.90* | *R² 0.90* | *0.10* | *< 0* |
+
+Cómo leerla:
+
+1. **El tiempo es v_max** en los tres regímenes (88–98 %). Con w_max = 6 también contaba cuánto frenar en curva
+   (`k_v_curva`, 12 %); con más giro disponible el coche ya casi no frena y deja de importar.
+2. **La fiabilidad cambia de dueño con w_max.** Con 6, la decidía cuánto frenar en curva (`k_v_curva`, 69 %): el giro
+   saturaba y solo frenando se pasaban las chicanes. Con 12, la velocidad (`v_max`, 45 %). Con 14, **cómo gira el
+   PID**: `td` (31 %), `k_hor` (14 %) y `kp` (11 %). Es la primera vez que el PID clásico pesa: con giro de sobra, lo
+   que decide es la calidad del lazo.
+3. **La oscilación es `k_hor`** (92 % con w_max = 6). En los regímenes rápidos el modelo ya no la predice (R² ≤ 0.10):
+   a 75–100 m/s el zigzag depende más de la vuelta que de los parámetros, y esos pesos no son de fiar (barras rayadas
+   en la figura).
+4. **Cada vez hay más azar.** La fiabilidad se predice muy bien con w_max = 6 (AUC 0.96) y regular en los rápidos
+   (0.71–0.72). A v_max ≥ 97 no se predice nada (AUC 0.46): lo que pasa en la primera curva y en la chicane norte
+   depende del fotograma en que el coche ve la curva. Por eso la decisión final se tomó con muchas vueltas por
+   combinación y no con el modelo.
+
+### Conclusiones
+
+- **De 43.4 s a 5.29 s fiables** (y ~5.0 s con el 60–76 % de vueltas completas a v_max ≈ 99). La mejora vino en tres
+  saltos de estructura: la banda del horizonte (v ≈ 30), liberar el giro máximo (w_max 6 → 12 → 14) y subir v_max con
+  el PID reajustado a cada velocidad.
+- **El controlador acabó siendo de anticipación:** a más de 35 m/s, P y D aportan solo el 8–27 % del giro; el resto lo
+  ponen la prealimentación y el horizonte (figura de telemetría, §18). Pero con w_max = 14 el PID decide si la vuelta
+  termina.
+- **Lo que limita ahora** es la cámara (20 Hz y ~12.7 m de alcance: la primera curva se ve solo ~2 fotogramas antes)
+  y la chicane norte por encima de ~95 m/s.
+
+---
 
 **Foto del 2026-11-06 a las 00:15**, con el optimizador todavía en marcha (`simple_v3_g6`).
 Datos: **2076 ensayos** de `simple_v1`, `simple_v2` y `simple_v3` (g0–g6), con 1295 vueltas completas y 781 fallos
@@ -20,7 +74,7 @@ uv run --with pandas --with scikit-learn --with matplotlib --with scipy python t
 
 ---
 
-## 0. Resumen
+## 0. Resumen de `simple_v1`–`v3` (2026-11-06)
 
 1. **El PID clásico ya no decide nada.** `kp`, `td`, `n_filtro`, `kv_kp` y `z_mirar_min` tienen una importancia ≈ 0
    sobre el tiempo, la fiabilidad y la oscilación dentro de sus ventanas actuales. En la pista, P + D aportan solo
@@ -768,14 +822,55 @@ régimen w_max = 14 (`simple_v6`–`v7`, figuras con sufijo `_w14`) y una secci�
 ![Dependencia parcial w_max = 14](img/estudio/03_dependencia_parcial_w14.png)
 
 - **Tiempo:** v_max explica el 91 % (R² = 0.90). Con magnitudes físicas, la velocidad en curva `v_curva` el 80 %.
-- **Fiabilidad:** la importancia la encabezan **td (31 %)** y k_hor (14 %). Con td ≥ 0.069 la probabilidad de completar
-  sube de ~55 % a ~67 % (dependencia parcial), y con k_hor ≥ 0.039 de ~59 % a ~68 %. La v_max apenas cuenta dentro de
-  93–100 (4 %): lo que decide es cómo gira, no cuánto corre. El modelo predice poco (AUC = 0.72): sigue habiendo mucho
-  azar en cada vuelta.
+- **Fiabilidad:** la importancia la encabezan **td (31 %)**, k_hor (14 %) y kp (11 %). Con magnitudes físicas: td 0.24,
+  k_hor 0.19 y v_min 0.12. Con td ≥ 0.069 la probabilidad de completar sube de ~55 % a ~67 % (dependencia parcial), y
+  con k_hor ≥ 0.039 de ~59 % a ~68 %. La v_max apenas cuenta dentro de 93–100 (4 %): lo que decide es cómo gira, no
+  cuánto corre. El modelo predice poco (AUC = 0.72): sigue habiendo mucho azar en cada vuelta.
+- **A v_max ≥ 97 (`simple_v6`) no se predice nada:** AUC 0.46 para completar y R² 0.11 para el tiempo. A esa
+  velocidad, que la vuelta termine depende del fotograma en que se ve la curva, no de los parámetros.
+- **Oscilación:** el modelo no la predice (R² < 0). k_hor tiene el mayor peso (34 %, y sube la oscilación:
+  Spearman +0.22), pero no es fiable.
 - **Dónde falla:** 300–310 m (16 %), 350–360 m (12 %), primera curva 40–50 m (9 %) y 120–130 m (8 %).
+
+![Interacciones w_max = 14](img/estudio/04_interacciones_w14.png)
+
+- **kp × td** es la interacción más clara: con td ≥ 0.069 y kp ≥ 0.011 se completa el ~68 %, y con td < 0.066 y
+  kp < 0.0105, menos del 50 %. Los dos juntos dan más amortiguamiento al lazo.
+- **k_hor × k_ff:** con k_hor ≥ 0.039 y k_ff ≥ 0.62 se pasa del ~55 al ~66 %. Los dos son la parte anticipativa del giro.
+- v_max, k_v_curva, v_min y t_mirar apenas cambian el mapa dentro de sus ventanas.
 
 ![Frontera w_max = 14](img/estudio/05_frontera_w14.png)
 ![Palancas w_max = 14](img/estudio/08_palancas_w14.png)
+
+| v_max | Ensayos | Completas | t mediano |
+|---|---|---|---|
+| 90–93.5 | 1010 | 68 % | 5.31 |
+| 95–97 | 13 | 85 % | 5.12 |
+| 97–98 | 17 | 71 % | 5.06 |
+| 98–99 | 133 | 56 % | 5.04 |
+| 99–100 | 473 | 61 % | 5.01 |
+| 100–103 | 9 | 33 % | 4.97 |
+
+En el optimizador, la fiabilidad se queda en el 56–68 % a cualquier velocidad, porque mezcla candidatos buenos y
+malos. La de una combinación concreta y bien ajustada es mucho mayor (97 % la elegida, tabla de abajo).
+
+### Tendencia y telemetría
+
+![Tendencia](img/estudio/06_tendencia.png)
+
+Con w_max = 14 (verde), al pasar de 93 a ~99.6 m/s los buenos parámetros suben kp (0.0110 → 0.0114), k_ff (0.60 →
+0.64) y la ganancia del lazo (0.96 → 1.09), y bajan k_v_curva (1.97 → 1.64), v_min (9.2 → 7.8), td (0.069 → 0.064)
+y t_mirar (0.141 → 0.118). Frente a w_max = 12, el PID es más proporcional (kp 0.0103 → 0.011), con menos filtro en
+la D (n_filtro 10.4 → 7.6–8.0) y con k_hor más bajo (0.044 → 0.036–0.039). La ganancia del lazo sigue creciendo con
+la velocidad en los tres regímenes.
+
+![Telemetría](img/estudio/07_telemetria.png)
+
+- **Quién gira el coche:** a 90–105 m/s, P + D ponen el 26–27 % del giro (el 8–20 % a 35–90 m/s) y FF + HOR el resto.
+- **Dónde falla** (2971 vueltas fallidas): casi todo en la chicane sur (salida y primera curva) y en la chicane norte.
+- **Derecha:** la vuelta más rápida registrada por el panel, **4.80 s**, es una vuelta lanzada (venía de la anterior,
+  sin los 0.35 s del reinicio) con `w14_v95_kvc18`: equivale a ~5.15 s con reinicio. Las vueltas falsas del
+  cronómetro (§17) se excluyen.
 
 ### Decisión
 

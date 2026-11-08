@@ -111,14 +111,14 @@ El simulador obedece casi al instante: el coche sigue el giro mandado al 98.6 % 
 | Término | Parámetros | Por qué está |
 |---|---|---|
 | **P** | `kp` | Corrige la distancia a la línea. Es la base del lazo. |
-| **D filtrada** | `td`, `n_filtro` | Da adelanto de fase y amortigua el zigzag. El filtro $\tau_d = T_d/N$ suaviza los saltos de píxel entre fotogramas. Con $T = 50$ ms el filtro solo actúa si $\tau_d \gtrsim T$, es decir, si $N \lesssim T_d/T$. Con los valores óptimos ($\tau_d \approx 0.007$ s) no actúa. |
+| **D filtrada** | `td`, `n_filtro` | Da adelanto de fase y amortigua el zigzag. Con w_max = 14 es **el parámetro que más pesa en la fiabilidad** (31 %): con td ≥ 0.069 se completan más vueltas. El filtro $\tau_d = T_d/N$ suaviza los saltos de píxel entre fotogramas. Con $T = 50$ ms el filtro solo actúa si $\tau_d \gtrsim T$, es decir, si $N \lesssim T_d/T$. Con los valores óptimos ($\tau_d \approx 0.007$ s) no actúa. |
 | **I** | `ti` = 0 | **Desactivada a propósito.** El coche no tiene ninguna perturbación constante que corregir (no derrapa) y la I solo resta 90° de fase. El código la mantiene con anti-windup por si se activa. |
-| **Saturación y anti-windup** | `w_max` | Limita el giro. Con `w_max` = 6, a v ≈ 57 m/s, el giro iba saturado el 40–60 % del tiempo en la chicane norte (el 73 % en la mejor vuelta), donde ocurría la mayoría de choques. Con 12 (desde `simple_v4`) el coche puede entrar en curva al doble de velocidad. A 75 m/s, subirlo a 14–20 quita la saturación del todo (el coche nunca pide más de ~16.5 rad/s), pero las vueltas completas no cambian y el tiempo solo mejora 0.02 s. El anti-windup evita que la I se cargue mientras $w$ está saturada. |
-| **Mirada adelantada** | `t_mirar`, `z_mirar_min` | El error se mide a $L = v\,t_{mirar}$ metros por delante (como *pure pursuit*). Como $e \approx F\,(y + L\psi)/L$ incluye el rumbo, añade un **cero en** $s = -1/t_{mirar}$: adelanto de fase **sin derivar ruido**. Tiene un techo: la cámara ve la línea hasta 12.7 m, solo 0.17 s a 76 m/s. Por eso el óptimo se ha quedado en $t_{mirar} \approx 0.11$ s ($L \approx 8.5$ m). |
-| **Prealimentación (FF)** | `k_ff` | Para recorrer una curva de curvatura $\kappa$ a velocidad $v$ hace falta exactamente $w = v\,\kappa$. Sin FF, el P necesitaría un error permanente para producir ese giro. En teoría $k_{ff} = 1$, pero κ se mide por delante del coche. Con `w_max` = 6 el óptimo subía con v hasta ≈ 0.9; con 12 baja a ≈ 0.6, porque la realimentación ya no satura y una FF alta sobrecorrige. |
-| **Banda del horizonte** | `k_hor`, `fila_hor`, `n_filas_hor` | Las filas que tocan el horizonte ven la curva antes que el resto, cuando el error cercano aún es casi 0. Se suma como prealimentación, fuera de la D, para empezar a girar antes. A alta velocidad aporta casi la mitad del giro. Su óptimo es 0.04–0.065: por debajo de 0.02 casi ninguna vuelta se completa, y por encima de 0.08 hace zigzag. **Es el límite actual:** a más de ~80 m/s la línea en el horizonte salta hasta ~130 px entre fotogramas y, sin filtro, el término mete 7–8 rad/s de golpe. Domina el giro en el 61 % de los fallos. En la imagen de la web se ve como una banda azul. |
-| **Ganancia según la velocidad** | `kv_kp` | La ganancia del lazo crece con $v$ (por $Y/W = v/s^2$). Bajar $K_p$ a alta velocidad mantendría el mismo margen de estabilidad, pero el optimizador lo ha dejado en ≈ 0.004 (casi sin efecto): prefiere una realimentación más rígida. |
-| **Perfil de velocidad y rampa** | `v_max`, `k_v_curva`, `v_min`, `a_sub`, `a_fren` | El tiempo de vuelta es ≈ 426 m / v. Con `w_max` = 6 había que frenar mucho en curva (`k_v_curva` ≈ 7, unos 29 m/s en las chicanes). Con 12 casi no se frena (`k_v_curva` ≈ 2, nunca por debajo de ~57 m/s) y el tiempo depende casi solo de `v_max`. |
+| **Saturación y anti-windup** | `w_max` | Limita el giro. Con `w_max` = 6, a v ≈ 57 m/s, el giro iba saturado el 40–60 % del tiempo en la chicane norte (el 73 % en la mejor vuelta), donde ocurría la mayoría de choques. Con 12 (desde `simple_v4`) el coche puede entrar en curva al doble de velocidad. A 95 m/s, 12 vuelve a saturar en la chicane norte; **el valor final es 14**: con 16 o más el coche se pasa en la primera curva. El anti-windup evita que la I se cargue mientras $w$ está saturada. |
+| **Mirada adelantada** | `t_mirar`, `z_mirar_min` | El error se mide a $L = v\,t_{mirar}$ metros por delante (como *pure pursuit*). Como $e \approx F\,(y + L\psi)/L$ incluye el rumbo, añade un **cero en** $s = -1/t_{mirar}$: adelanto de fase **sin derivar ruido**. Tiene un techo: la cámara ve la línea hasta 12.7 m, solo 0.17 s a 76 m/s. Por eso el óptimo se ha quedado en $t_{mirar} \approx 0.12$ s: a 93 m/s ya mira al límite de la cámara en recta, y mirar más cerca (≤ 0.10) hace fallar la chicane norte. |
+| **Prealimentación (FF)** | `k_ff` | Para recorrer una curva de curvatura $\kappa$ a velocidad $v$ hace falta exactamente $w = v\,\kappa$. Sin FF, el P necesitaría un error permanente para producir ese giro. En teoría $k_{ff} = 1$, pero κ se mide por delante del coche. Con `w_max` = 6 el óptimo subía con v hasta ≈ 0.9; con 12–14 baja a ≈ 0.6–0.64, porque la realimentación ya no satura y una FF alta sobrecorrige. |
+| **Banda del horizonte** | `k_hor`, `fila_hor`, `n_filas_hor` | Las filas que tocan el horizonte ven la curva antes que el resto, cuando el error cercano aún es casi 0. Se suma como prealimentación, fuera de la D, para empezar a girar antes. A alta velocidad aporta casi la mitad del giro. Su óptimo baja con la velocidad: 0.064 a 75 m/s, 0.04–0.045 a 84–96 y **0.036 en la combinación final** (93 m/s). Por debajo de 0.02 casi ninguna vuelta se completa, y por encima del óptimo hace zigzag: a más de ~80 m/s la línea en el horizonte salta hasta ~130 px entre fotogramas. Es el parámetro que más pesa en la oscilación y el segundo en la fiabilidad con w_max = 14. En la imagen de la web se ve como una banda azul. |
+| **Ganancia según la velocidad** | `kv_kp` | La ganancia del lazo crece con $v$ (por $Y/W = v/s^2$). Bajar $K_p$ a alta velocidad mantendría el mismo margen de estabilidad, pero el optimizador lo ha dejado en ≈ 0.004 con w_max = 12 y en ≈ 0.0005 con 14 (sin efecto): prefiere una realimentación más rígida. |
+| **Perfil de velocidad y rampa** | `v_max`, `k_v_curva`, `v_min`, `a_sub`, `a_fren` | El tiempo de vuelta es ≈ 426 m / v. Con `w_max` = 6 había que frenar mucho en curva (`k_v_curva` ≈ 7, unos 29 m/s en las chicanes). Con 12–14 casi no se frena (`k_v_curva` ≈ 1.7–2.6) y el tiempo depende casi solo de `v_max` (88–98 % del peso). Valor final: v_max = 93, k_v_curva = 1.7. |
 | **Vigilante** | `t_perdida_max`, `t_atasco` | Si se pierde la línea o se atasca contra la pared, el coche vuelve solo a la salida. Así el optimizador puede encadenar cientos de vueltas sin intervención. |
 
 ---
@@ -151,7 +151,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 \qquad J_{fallo} = 60\,(2 - \text{fracción recorrida})
 ```
 
-1 s de vuelta pesa como 200 px de e_rms o 10 cambios de signo por segundo, así que manda el tiempo. Además:
+1 s de vuelta pesa como 200 px de e_rms o 10 cambios de signo por segundo, así que manda el tiempo. En `simple_v7`, centrado en la fiabilidad, los pesos subieron a 2.0 y 0.3. Además:
 
 - Desde el panel se le pueden **proponer ensayos en caliente** (botón «Probar en el optimizador»).
 - La **ventana de búsqueda se desplaza sola** cuando los mejores ensayos se acercan a un borde, así que no hay techo para ningún parámetro.
@@ -166,14 +166,14 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 | `tools/optimizador/config_v6.json` | `simple_v6` | w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. 719 ensayos: ~5.0 s de mediana a v_max ≈ 99, pero 60 % de vueltas completas |
 | `tools/optimizador/config_v7.json` | `simple_v7` | **Fiabilidad:** v_max fija en 93, J con más peso a la estabilidad (peso_e_rms 2.0, peso_cambios_w 0.3) y `repetir` = 5. 1009 ensayos; mejor candidato 10/10 a 5.30 s con e_rms 213 |
 
-`tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
+`tools/optimizar.sh --informe <estudio>` genera estas gráficas. Las de abajo son del último estudio, `simple_v7_g3` (1009 ensayos válidos a v_max = 93, J con más peso a la estabilidad):
 
 | | |
 |---|---|
-| ![Historia](docs/img/optuna_historia.png) | **Historia.** J de cada ensayo y el mejor hasta el momento. Cada escalón de la línea negra es una mejora, y cada uno coincide con un desplazamiento de la ventana de `v_max` (64 → 80). Casi no hay fallos (puntos rojos): con `w_max` = 12 la zona buena es mucho más ancha que en `simple_v3`. |
-| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA).** Cuánto explica cada parámetro de la variación de J: `v_max` 0.27, `td` 0.24, `t_mirar` 0.10 y `k_v_curva` 0.09. El peso de `td` se debe en parte a que los primeros ensayos, más lentos, tenían `td` alto. Separando tiempo y fiabilidad, el tiempo lo explican `v_max` (0.72) y `k_v_curva` (0.26) (`docs/ESTUDIO_PID.md` §11). |
-| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** Dónde está la zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas). J baja casi en línea recta con `v_max` y sube con `k_v_curva` y `k_ff`. El resto se concentra en una franja estrecha: `td` ≈ 0.085, `n_filtro` ≈ 12, `t_mirar` ≈ 0.11, `k_hor` ≈ 0.065. |
-| ![Tiempo frente a oscilación](docs/img/optuna_tiempo_vs_osc.png) | **Tiempo frente a oscilación.** El compromiso entre ir rápido y no hacer zigzag; abajo a la izquierda es mejor. A más velocidad, más cambios de signo de w por segundo (2–4 a 75 m/s, frente a 1–2 a 57). |
+| ![Historia](docs/img/optuna_historia.png) | **Historia.** J de cada ensayo y el mejor hasta el momento. Con v_max fija, J (≈ 10–11.5) mide sobre todo la estabilidad: 5.3 s de vuelta más ~5 de e_rms y oscilación. Los fallos (J ≈ 70–120) quedan fuera de la escala. El mejor se encontró pronto (~ensayo 90): el resto confirma que no hay nada claramente mejor en la ventana. |
+| ![Importancia](docs/img/optuna_importancia.png) | **Importancia (fANOVA) sobre J.** Muy repartida: v_min 0.13, k_hor 0.12, z_mirar_min 0.12, td 0.11, n_filtro 0.10 y el resto 0.06–0.09. Con la velocidad fija ningún parámetro domina J. Separando métricas, td y k_hor deciden la fiabilidad (`docs/ESTUDIO_PID.md` §18). |
+| ![Cortes](docs/img/optuna_cortes.png) | **J frente a cada parámetro.** La zona buena de cada uno (las aspas rojas de arriba son vueltas fallidas): k_v_curva ≈ 1.9–2.2, v_min ≈ 9–9.5, kp ≈ 0.010–0.0115, td ≈ 0.066–0.071, n_filtro ≈ 7.5–8.3, k_ff ≈ 0.57–0.62, t_mirar ≈ 0.135–0.145 y k_hor ≈ 0.037–0.041. Los fallos están repartidos por toda la ventana. |
+| ![Tiempo frente a oscilación](docs/img/optuna_tiempo_vs_osc.png) | **Tiempo frente a oscilación.** A v_max fija, el tiempo apenas cambia (casi todo entre 5.22 y 5.45 s) y la oscilación va de 1.5 a 4.5 cambios de signo de w por segundo. Ir más suave no cuesta tiempo: las franjas verticales son vueltas casi iguales con distinto número de cambios. |
 
 ### 3.3 Barridos de un parámetro (`tools/barrido.sh`)
 
@@ -189,6 +189,10 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 - **`w_max`** (base de 8.95 s): con 7 o más se completan 140 de 140 vueltas (con 6, 19 de 20), y a partir de 9 desaparece la saturación. El tiempo no cambia porque el perfil de velocidad era el mismo en todos. Es lo que llevó a `simple_v4`.
 - **`w_max` a 75 m/s** (base de 6.4 s, valores 12, 14, 16 y 20): la saturación baja del 8 % al 0 % y el tiempo mejora 0.02 s, pero las vueltas completas se quedan en el 80–90 %. Los fallos de este régimen no vienen del giro máximo, sino del horizonte (ver §4).
 - **`v_max`** (base de 6.4 s, 6 valores × 20 vueltas): el tiempo baja ~0.065 s por cada m/s (6.32 s a 76 → 5.67 s a 86). A 76, 78 y 82 m/s se completa el 90 % de las vueltas; a 80, el 60 %; a 84, el 75 %; y a 86, el 55 %. Los fallos se concentran en la chicane sur (~42 m) y en la chicane norte y la curva final (320–371 m).
+- **`k_hor` a 84 m/s:** óptimo en 0.04–0.05 (20/20 con 0.04); con 0.03 no anticipa y con 0.064 oscila. Filtrar `e_hor` se descartó (0/20).
+- **`w_max` a 95.5 m/s:** 14 es el mejor (13/20). Con 12 falla la chicane norte por saturación y con 16–18 el coche se pasa en la primera curva.
+- **`k_v_curva` con w_max = 14:** frenar menos en curva acelera ~0.02 s por cada 0.2 sin perder fiabilidad hasta ~1.6 (1.8: 34/40 a 5.19 s).
+- **`v_max` y `t_mirar` con la combinación de `simple_v6`:** 92–93 m/s es el punto dulce (57/60); por encima falla la chicane norte y por debajo la primera curva. `t_mirar` = 0.116 da 38/40; mirar más cerca rompe la chicane (`docs/ESTUDIO_PID.md` §16–17).
 
 ### 3.4 Análisis fuera de línea
 
@@ -199,7 +203,7 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ![Telemetría](docs/img/estudio/07_telemetria.png)
 
-*Izquierda:* reparto del giro entre los términos. A partir de 35 m/s, P y D aportan solo el 8–18 %; el resto lo ponen la prealimentación y el horizonte. *Centro:* dónde fallan las vueltas, casi todas en las dos chicanes. *Derecha:* los términos en la vuelta más rápida (5.65 s).
+*Izquierda:* reparto del giro entre los términos (7872 vueltas). De 35 a 90 m/s, P y D aportan solo el 8–20 %, y a 90–105 m/s el 26–27 %; el resto lo ponen la prealimentación y el horizonte. *Centro:* dónde fallan las vueltas, casi todas en las dos chicanes. *Derecha:* los términos en la vuelta más rápida registrada, 4.80 s: una vuelta lanzada, sin los 0.35 s del reinicio (equivale a ~5.15 s), con w_max = 14 y v_max = 95.5.
 
 ---
 
@@ -208,6 +212,18 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 **Elegidos en el macroanálisis final y puestos como valores por defecto de `src/follow_line.py`** (preset `w14_v93_v6`): **5.29 s de mediana y 63 de 65 vueltas completas (97 %)**. De las 4599 combinaciones probadas, es la de mayor fiabilidad demostrada (cota inferior del 95 % de su tasa de vueltas completas: 89 %), y ninguna es a la vez más rápida y más fiable (`docs/ESTUDIO_PID.md` §18). Basta con pegar `src/follow_line.py` y pulsar play.
 
 ![Decisión](docs/img/estudio/10_decision.png)
+
+**Qué pesa en cada métrica** (importancia por permutación, suma 1; detalle en `docs/ESTUDIO_PID.md`, resumen final):
+
+![Pesos por régimen](docs/img/estudio/11_pesos.png)
+
+| Métrica | w_max = 6 (`simple_v3`) | w_max = 12 (`simple_v4`–`v5`) | w_max = 14 (`simple_v6`–`v7`) |
+|---|---|---|---|
+| Tiempo | v_max 0.88, k_v_curva 0.12 | v_max 0.98 | v_max 0.91, k_ff 0.05 |
+| Fiabilidad | k_v_curva 0.69, k_hor 0.14, v_max 0.11 | v_max 0.45, k_v_curva 0.18 | **td 0.31, k_hor 0.14, kp 0.11** |
+| Oscilación | k_hor 0.92 | k_hor 0.33, v_max 0.17 (el modelo no predice) | k_hor 0.34 (el modelo no predice) |
+
+El tiempo siempre lo decide v_max. La fiabilidad pasa de depender de cuánto frenar en curva (w_max = 6) a depender de la velocidad (12) y, con 14, del propio PID: td, k_hor y kp. A más velocidad hay más azar: a v_max ≥ 97 ningún modelo predice si la vuelta termina, por eso la decisión final se tomó con muchas vueltas por combinación.
 
 | Parámetros | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -223,7 +239,7 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 - **La primera curva (~43 m y ~72 m).** Va al límite en todas las vueltas: a 93–95 m/s el coche la ve solo ~2 fotogramas antes, y el resultado depende del fotograma en que la detecta. Es la causa de casi todos los fallos que quedan (~1 de cada 30 vueltas).
 - **Cómo gira, más que cuánto corre.** Con w_max = 14, la fiabilidad depende sobre todo de `td` (31 %) y `k_hor` (14 %), y casi nada de v_max dentro de 93–100. Subir td a ~0.07 y k_hor a ~0.04 parece dar algo más de fiabilidad, pero falta confirmarlo (`docs/ESTUDIO_PID.md` §18).
 - **La cámara.** Ve la línea a 12.7 m como mucho: 3 fotogramas de anticipación a 86 m/s y 2.7 a 95.
-- **La banda del horizonte.** Su ganancia buena baja con la velocidad (0.064 a 75 m/s, 0.04–0.045 a 84–96). Filtrar `e_hor` no sirve: retrasarlo un fotograma vuelve inestable el giro (0 de 20 vueltas, `docs/ESTUDIO_PID.md` §14).
+- **La banda del horizonte.** Su ganancia buena baja con la velocidad (0.064 a 75 m/s, 0.04–0.045 a 84–96 y 0.036 a 93–99). Filtrar `e_hor` no sirve: retrasarlo un fotograma vuelve inestable el giro (0 de 20 vueltas, `docs/ESTUDIO_PID.md` §14).
 - **El cálculo no limita.** La percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (`docs/PLAN.md` §5.8).
 
 ---

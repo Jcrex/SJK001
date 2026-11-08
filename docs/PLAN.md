@@ -608,6 +608,9 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
   candidato (opción `repetir` del optimizador). Mejor: 10/10 a 5.30 s con e_rms 213.
 - Corregido el cronómetro del panel (vueltas falsas por el teletransporte del reinicio y meta fijada en la salida).
 - **Macroanálisis final** (`macro_analisis.py`, régimen w_max = 14 y sección de decisión, ESTUDIO_PID.md §18).
+  Figura 11 con el peso de cada parámetro en el tiempo, la fiabilidad y la oscilación para los tres regímenes de
+  w_max (resumen final de ESTUDIO_PID.md), y telemetría sin las vueltas falsas del cronómetro. Gráficas del
+  optimizador del README regeneradas con `simple_v7_g3`.
 - **Elegida `w14_v93_v6`: 63/65 vueltas (97 %, cota inferior del 95 %: 89 %) a 5.29 s de mediana.** Es la de mayor
   fiabilidad demostrada de las 4599 combinaciones y queda como valor por defecto de `src/follow_line.py` (el control P
   de las fases 1–2 sigue disponible como `FASE1` / `params_fase1()`).

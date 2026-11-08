@@ -53,7 +53,7 @@ REGIMENES = [
     {"nombre": "simple_v4–v5 (w_max = 12)", "prefijos": ("simple_v4", "simple_v5"), "sufijo": "_w12", "rapido": 90,
      "tramos": [55, 65, 70, 74, 78, 84, 88, 90, 92, 94, 96, 98, 105], "palancas_desde": 90,
      "cortes_kvc": [1.5, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 6, 11], "cortes_khor": [0.02, 0.035, 0.04, 0.045, 0.05, 0.06, 0.08]},
-    {"nombre": "simple_v6–v7 (w_max = 14)", "prefijos": ("simple_v6", "simple_v7"), "sufijo": "_w14", "rapido": 93,
+    {"nombre": "simple_v6–v7 (w_max = 14)", "prefijos": ("simple_v6", "simple_v7"), "sufijo": "_w14", "rapido": 97,
      "tramos": [90, 93.5, 95, 97, 98, 99, 100, 103], "palancas_desde": 92.5,
      "cortes_kvc": [1.0, 1.4, 1.6, 1.8, 2.0, 2.2, 2.6], "cortes_khor": [0.025, 0.033, 0.036, 0.039, 0.042, 0.055]},
 ]
@@ -205,6 +205,9 @@ def _rf_importancia(X, y, clasif, semilla=0):
     return m, imp, calidad
 
 
+CALIDAD = {}  # (régimen, métrica) → AUC o R² fuera de muestra del modelo de importancia
+
+
 def importancia(df, reg):
     titulo(f"3. QUÉ PARÁMETROS TIENEN MÁS IMPACTO · {reg['nombre']}")
     # Un régimen cada vez (mismo espacio de parámetros) para comparar manzanas con manzanas
@@ -223,6 +226,7 @@ def importancia(df, reg):
         X, y = sub[PARAMS], sub[col]
         m, imp, cal = _rf_importancia(X, y, clas)
         res[nombre] = imp / imp.sum()
+        CALIDAD[(reg["nombre"], nombre)] = cal
         modelos[nombre] = (m, sub)
         rho[nombre] = pd.Series({p: spearmanr(sub[p], y).statistic for p in PARAMS})
         met = "AUC" if clas else "R²"
@@ -492,6 +496,8 @@ def telemetria(df):
             s = t[t.vuelta == lap.vuelta]
             if len(s) < 10:
                 continue
+            if lap.completada and lap.distancia_m < 0.8 * 430:
+                continue  # vuelta falsa del cronómetro (teletransporte o meta mal fijada, ESTUDIO_PID §17)
             fila = {"fichero": Path(f).name[:15], "vuelta": lap.vuelta, "ok": int(lap.completada),
                     "v_max": lap.v_max, "w_max": lap.w_max, "tiempo_s": lap.tiempo_s,
                     "distancia": lap.distancia_m}
@@ -688,14 +694,56 @@ def decision():
     return e
 
 
+# ---------------------------------------------------------------- 10. pesos por régimen
+def pesos(imps):
+    """Peso (importancia por permutación, suma 1) de cada parámetro en el tiempo, la fiabilidad y la
+    oscilación, para los tres regímenes de w_max. Resume las figuras 02 en una sola."""
+    titulo("10. PESO DE CADA PARÁMETRO POR RÉGIMEN")
+    metricas = ["P(completar)", "tiempo (completas)", "oscilación w±/s"]
+    regs = list(imps)
+    tabla = pd.concat({m: pd.DataFrame({r: imps[r][m] for r in regs}) for m in metricas}, axis=1)
+    with pd.option_context("display.width", 220):
+        print(tabla.round(2).to_string())
+    colores = [AZUL, "#f59e0b", VERDE]
+    fig, axs = plt.subplots(1, 3, figsize=(16, 6.5), sharey=True)
+    orden = tabla.max(axis=1).sort_values().index
+    y = np.arange(len(orden))
+    alto = 0.8 / len(regs)
+    for ax, m in zip(axs, metricas):
+        clas = m.startswith("P(")
+        for i, (r, c) in enumerate(zip(regs, colores)):
+            val = imps[r][m].reindex(orden).fillna(0)
+            cal = CALIDAD.get((r, m), np.nan)
+            # Un modelo que no predice (AUC < 0.65 o R² < 0.3) no da pesos de fiar: barra rayada y clara
+            malo = cal < (0.65 if clas else 0.3)
+            etiqueta = f"{r} · {'AUC' if clas else 'R²'} {cal:.2f}" + (" (no predice)" if malo else "")
+            ax.barh(y + (i - (len(regs) - 1) / 2) * alto, val, height=alto, color=c, label=etiqueta,
+                    alpha=0.35 if malo else 1.0, hatch="//" if malo else None, edgecolor=c if malo else None)
+            for yy, vv in zip(y + (i - (len(regs) - 1) / 2) * alto, val):
+                if vv >= 0.08:
+                    ax.text(vv + 0.01, yy, f"{vv:.2f}", va="center", fontsize=7)
+        ax.set_title(m)
+        ax.legend(loc="lower right", fontsize=7)
+        ax.set_xlim(0, 1.05)
+        ax.set_xlabel("peso (importancia por permutación, suma 1)")
+    axs[0].set_yticks(y, orden)
+    fig.suptitle("Qué pesa en cada métrica: w_max = 6 (simple_v3), 12 (v4–v5) y 14 (v6–v7)")
+    fig.tight_layout()
+    fig.savefig(FIG / "11_pesos.png")
+    plt.close(fig)
+    return tabla
+
+
 def main():
     df = cargar()
     resumen = {}
     resumen["evolucion"] = evolucion(df)
     resumen["ruido"] = ruido(df)
+    imps = {}
     for reg in REGIMENES:
-        importancia(df, reg)
+        imps[reg["nombre"]] = importancia(df, reg)[0]
         frontera(df, reg)
+    pesos(imps)
     tendencia(df)
     telemetria(df)
     for reg in REGIMENES:
