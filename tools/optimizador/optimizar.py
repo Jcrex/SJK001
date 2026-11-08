@@ -416,7 +416,12 @@ class Ensayador:
         if m["tipo"] == "hola":  # el controlador se reinició (nuevo play o recarga de la web)
             return None, "interrumpido"
         if m["tipo"] == "vuelta":
-            return m["fila"], "" if m["fila"]["completada"] else m["fila"]["motivo"]
+            f = m["fila"]
+            # Una vuelta «completa» muy corta es un error del cronómetro (antes del arreglo del
+            # teletransporte en panel.py): no es culpa de los parámetros y se repite.
+            if f["completada"] and f.get("distancia_m", 0) < 0.8 * self.cfg["objetivo"]["distancia_vuelta"]:
+                return None, "vuelta_corta"
+            return f, "" if f["completada"] else f["motivo"]
         # reinicio por choque: la fila del intento llega justo después (si llegó a moverse)
         f = await self.esperar(lambda x: x["tipo"] == "vuelta", 1.0)
         return (f["fila"] if f else None), m["motivo"]
@@ -548,7 +553,7 @@ async def principal(ruta_cfg):
                 print("[opt] el panel se cerró; reconectando...", flush=True)
                 await ens.conectar(sesion)
                 continue
-            if motivo in ("sin_respuesta", "reinicio_fallido", "interrumpido", "interferencia"):
+            if motivo in ("sin_respuesta", "reinicio_fallido", "interrumpido", "interferencia", "vuelta_corta"):
                 # no es culpa de los parámetros: se descarta y se repite más tarde
                 estudio.tell(trial, state=optuna.trial.TrialState.FAIL)
                 print(f"[opt] ensayo {trial.number} descartado ({motivo}); reintento en 5 s", flush=True)

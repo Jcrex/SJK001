@@ -42,13 +42,19 @@ COLS_DATO = ["t", "dt", "e", "kappa", "kappa_lejos", "y0", "rumbo", "validos", "
 COLS_METRICAS = ["vuelta", "completada", "motivo", "tiempo_s", "tiempo_reloj_s", "distancia_m", "v_media", "e_abs_medio",
                  "e_rms", "e_max", "perdidos", "cambios_w_s", "w_abs_medio", "params_cambiados"]
 R_LEJOS, R_CERCA = 30.0, 2.5
+V_SALTO = 250.0  # m/s (el coche no pasa de ~100; un reinicio salta a >1000): un desplazamiento entre fotogramas más rápido que esto es un teletransporte
 
 
 class Vueltas:
     """Cronómetro y métricas por vuelta a partir de la odometría."""
 
     def __init__(self):
+        # La meta es el primer punto visto, hasta el primer reinicio: entonces pasa a ser la
+        # posición de salida tras ese reinicio. Así un panel arrancado con el coche en marcha
+        # no deja la meta a mitad de circuito (todas las vueltas saldrían cortas).
         self.origen = None
+        self.origen_provisional = False  # recién fijada: si el siguiente fotograma es un salto, se corrige
+        self.origen_de_reinicio = False
         self.n = 0
         self._nueva(None)
 
@@ -91,7 +97,20 @@ class Vueltas:
             return None
         if self.origen is None:
             self.origen = (x, y)
+            self.origen_provisional = True
         ant, t_ant = self.xy_ant, self.t_ant
+        if ant and t is not None and t_ant is not None:
+            salto = math.hypot(x - ant[0], y - ant[1])
+            if salto > V_SALTO * max(t - t_ant, 0.0) + 2.0:
+                # Teletransporte (reinicio): tras un choque, el primer fotograma aún trae la
+                # posición del choque y el siguiente ya está en la salida. Ese salto cruzaba la
+                # meta y cerraba una vuelta falsa de 1 fotograma. Se empieza de cero aquí.
+                self.lejos = False
+                self.xy_ant, self.t_ant = (x, y), t
+                if self.origen_provisional:  # la meta se tomó del fotograma viejo del choque
+                    self.origen = (x, y)
+                return None
+            self.origen_provisional = False
         if ant:
             self.dist += math.hypot(x - ant[0], y - ant[1])
         self.xy_ant, self.t_ant = (x, y), t
@@ -114,9 +133,11 @@ class Vueltas:
         self.dist -= (1.0 - u) * math.sqrt(L2)  # lo recorrido tras la meta es de la vuelta siguiente
         return self._cerrar(t_meta, params, True, "")
 
-    def fallo(self, motivo, t, params):
+    def fallo(self, motivo, t, params, ok=True):
         """El coche se reinició en la salida. Devuelve la fila del intento fallido
         (None si fue un reinicio pedido o no había empezado a moverse)."""
+        if ok and not self.origen_de_reinicio:  # primer reinicio: la meta pasa a la salida
+            self.origen, self.origen_de_reinicio = None, True
         fila = None
         if motivo != "pedido" and self.t0 is not None and self.dist > 1.0:
             fila = self._cerrar(t, params, False, motivo)
@@ -357,7 +378,7 @@ class Panel:
                 await self.difundir({"tipo": "aviso", "texto": "parámetros del panel reaplicados: "
                                      + " ".join(f"{k}={v}" for k, v in distintos.items())})
         elif tipo == "reinicio":
-            fila = self.vueltas.fallo(m["motivo"], m["t"], self.valores)
+            fila = self.vueltas.fallo(m["motivo"], m["t"], self.valores, bool(m.get("ok", True)))
             self.marca = "reinicio: " + m["motivo"] + ("" if m.get("ok") else " (FALLÓ)")
             print(f"[panel] {self.marca}")
             await self.difundir(m)

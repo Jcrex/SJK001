@@ -51,3 +51,57 @@ def test_no_se_salta_la_meta_aunque_avance_mas_de_un_circulo_por_fotograma(v, de
 
 def test_la_meta_lejos_de_la_trayectoria_no_cuenta():
     assert correr(76.0, lateral=3.0) == []
+
+
+def test_el_teletransporte_del_reinicio_no_cierra_una_vuelta():
+    # Tras un choque, el primer fotograma aún trae la posición del choque (a 66 m de la
+    # salida) y el siguiente ya está en la salida: ese salto no es un paso por meta.
+    c = panel.Vueltas()
+    c.dato({"t": 0.0, "x": 0.0, "y": 0.0, "e": 0.0, "w": 0.0, "v": 90.0}, {})  # origen
+    c.fallo("choque", 0.0, {})
+    filas = [c.dato({"t": 0.40, "x": -61.8, "y": -22.9, "e": 0.0, "w": 0.0, "v": 88.0}, {}),
+             c.dato({"t": 0.45, "x": 0.1, "y": -2.8, "e": 0.0, "w": 0.0, "v": 93.0}, {})]
+    for k in range(1, 6):  # y sigue recto alejándose de la salida
+        filas.append(c.dato({"t": 0.45 + k * T, "x": 0.1, "y": -2.8 - 4.65 * k, "e": 0.0, "w": 0.0, "v": 93.0}, {}))
+    assert [f for f in filas if f] == []
+    assert c.dist == pytest.approx(5 * 4.65, abs=0.01)
+
+
+def circulo(c, t0, v, radio=40.0, a0=0.0, vueltas=1.2):
+    """Frames de un coche en un círculo que empieza en el ángulo a0 (0 = la salida)."""
+    filas, w, k = [], v / radio, 0
+    while k * T * w < 2 * math.pi * vueltas:
+        a = a0 + k * T * w
+        f = c.dato({"t": t0 + k * T, "x": radio * math.sin(a), "y": radio - radio * math.cos(a),
+                    "e": 0.0, "w": 0.1, "v": v}, {})
+        if f:
+            filas.append(f)
+        k += 1
+    return filas
+
+
+def test_panel_arrancado_a_mitad_de_vuelta_toma_la_meta_del_primer_reinicio():
+    c = panel.Vueltas()
+    circulo(c, 0.0, 90.0, a0=2.5, vueltas=0.3)  # el panel ve el coche a mitad de circuito
+    c.fallo("pedido", 10.0, {})
+    f = circulo(c, 10.0, 90.0)
+    assert len(f) == 1 and f[0]["completada"] == 1
+    assert f[0]["distancia_m"] == pytest.approx(2 * math.pi * 40, rel=0.01)
+
+
+def test_primer_reinicio_con_fotograma_viejo_corrige_la_meta():
+    c = panel.Vueltas()
+    circulo(c, 0.0, 90.0, a0=2.5, vueltas=0.3)
+    c.fallo("choque", 10.0, {})
+    c.dato({"t": 10.0, "x": -61.8, "y": -22.9, "e": 0.0, "w": 0.0, "v": 88.0}, {})  # posición del choque
+    f = circulo(c, 10.05, 90.0)
+    assert len(f) == 1
+    assert f[0]["distancia_m"] == pytest.approx(2 * math.pi * 40, rel=0.01)
+
+
+def test_un_reinicio_fallido_no_mueve_la_meta():
+    c = panel.Vueltas()
+    circulo(c, 0.0, 90.0, a0=0.0, vueltas=0.3)
+    origen = c.origen
+    c.fallo("pedido", 10.0, {}, ok=False)
+    assert c.origen == origen
