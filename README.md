@@ -12,9 +12,11 @@ Controlador para el ejercicio **Follow Line** de JdeRobot Robotics Academy (ROS 
 | Barrido de `v_max` con los parámetros de `simple_v4` (v = 82) | 5.92 s (mediana, 18 de 20 vueltas) |
 | Barridos de `k_hor` (0.045 a 84 m/s) y de `v_max` (v = 86) | 5.76 s (mediana, 20 de 20) · 5.56 s a v = 90 (15 de 20) |
 | Estudio `simple_v5` (v ≈ 95.5, 1338 ensayos) | 5.25 s (4 de 4) · mejor vuelta 5.18 s |
-| Barridos sobre #775: `w_max` = 14 y `k_v_curva` bajo | **5.19 s** (mediana, 34 de 40) · **5.12 s** con k_v_curva = 1.2 (15 de 20) · mejor vuelta 5.11 s |
+| Barridos sobre #775: `w_max` = 14 y `k_v_curva` bajo | 5.19 s (mediana, 34 de 40) · 5.12 s con k_v_curva = 1.2 (15 de 20) |
+| Estudio `simple_v6` (v ≈ 99, 719 ensayos) | ~5.0 s de mediana con el 60–76 % de vueltas completas · mejor vuelta 4.94 s |
+| **Final:** barridos de fiabilidad, `simple_v7` y macroanálisis (v = 93, w_max = 14) | **5.29 s (mediana, 63 de 65 vueltas, 97 %)** · valores por defecto del controlador |
 
-Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.19 s son 4.84 s de conducción.
+Todos los tiempos incluyen **0.35 s de reinicio**: el cronómetro arranca al pedir la vuelta a la salida, y el simulador tarda ese tiempo en colocar el coche (ver §3.1). El 5.29 s son 4.94 s de conducción.
 
 El plan, las medidas y las decisiones paso a paso están en [`docs/PLAN.md`](docs/PLAN.md). El análisis de todos los ensayos (qué parámetros importan, hacia dónde tiende el PID y qué limita la vuelta) está en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 
@@ -153,6 +155,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 
 - Desde el panel se le pueden **proponer ensayos en caliente** (botón «Probar en el optimizador»).
 - La **ventana de búsqueda se desplaza sola** cuando los mejores ensayos se acercan a un borde, así que no hay techo para ningún parámetro.
+- Con `repetir` = N (config), un candidato que completa su vuelta **se repite enseguida hasta N veces** y se deja al primer fallo: los buenos se miden con una tanda y los malos cuestan una sola vuelta.
 - Cada 10 ensayos **repite uno de los mejores** para comprobar que no fue suerte. Los mejores se ordenan por la **J media de todas sus repeticiones**: un choque cuenta ~75, así que unos parámetros que completan 2 de 24 vueltas ya no pasan por buenos por una vuelta con suerte.
 
 | Configuración | Estudio | Qué cambia |
@@ -160,7 +163,8 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 | `tools/optimizador/config.json` | `simple_v3` | w_max = 6. 1790 ensayos y 6 generaciones; mejor resultado 8.95 s (3/3) |
 | `tools/optimizador/config_v4.json` | `simple_v4` | w_max = 12, sin importar `simple_v3` (sus fallos se debían a la saturación) y ventanas centradas en su mejor. 273 ensayos, 94 % de vueltas completas |
 | `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces. 1338 ensayos (g0–g6): la ventana de v_max subió sola hasta 93–102, con 5.25 s en 4 de 4 a v_max = 95.5 |
-| `tools/optimizador/config_v6.json` | `simple_v6` | w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. Semillas `w14_v95_kvc18` y `w14_v95_kvc12` (en marcha) |
+| `tools/optimizador/config_v6.json` | `simple_v6` | w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. 719 ensayos: ~5.0 s de mediana a v_max ≈ 99, pero 60 % de vueltas completas |
+| `tools/optimizador/config_v7.json` | `simple_v7` | **Fiabilidad:** v_max fija en 93, J con más peso a la estabilidad (peso_e_rms 2.0, peso_cambios_w 0.3) y `repetir` = 5. 1009 ensayos; mejor candidato 10/10 a 5.30 s con e_rms 213 |
 
 `tools/optimizar.sh --informe simple_v4` genera estas gráficas (las de abajo son de `simple_v4_g7`, 266 ensayos):
 
@@ -188,7 +192,7 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ### 3.4 Análisis fuera de línea
 
-- `tools/optimizador/macro_analisis.py`: análisis de todos los ensayos, barridos y telemetría. Calcula la importancia de cada parámetro por separado para el tiempo, la fiabilidad y la oscilación (bosques aleatorios con validación cruzada), la tendencia de los buenos parámetros con la velocidad, qué término del control hace el trabajo y dónde y por qué falla el coche. Escribe las figuras en `docs/img/estudio/`. Resultados en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
+- `tools/optimizador/macro_analisis.py`: análisis de todos los ensayos, barridos y telemetría, con una sección final que elige la mejor combinación (figura 10). Calcula la importancia de cada parámetro por separado para el tiempo, la fiabilidad y la oscilación (bosques aleatorios con validación cruzada), la tendencia de los buenos parámetros con la velocidad, qué término del control hace el trabajo y dónde y por qué falla el coche. Escribe las figuras en `docs/img/estudio/`. Resultados en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 - `analysis/kappa_vs_trayectoria.py`: correlaciona la κ que ve la cámara con la curvatura que recorre el coche (odometría). Da el adelanto real de la percepción y comprueba que la escala es ≈ 1.
 - `tools/resumen_log.py`: resumen de un log (error, giro, oscilación y fotogramas perdidos).
 - `tools/bench_percepcion.py`: coste en ms de la percepción.
@@ -201,18 +205,23 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ## 4. Mejores parámetros
 
-#775 de `simple_v5` con **w_max = 14 y k_v_curva = 1.8: 5.19 s de mediana en 34 de 40 vueltas** (85 %), preset `w14_v95_kvc18`. Con k_v_curva = 1.2 baja a **5.12 s**, pero completa 15 de 20 (preset `w14_v95_kvc12`). Barridos en ESTUDIO_PID.md §16. El estudio `simple_v6` sigue a partir de aquí.
+**Elegidos en el macroanálisis final y puestos como valores por defecto de `src/follow_line.py`** (preset `w14_v93_v6`): **5.29 s de mediana y 63 de 65 vueltas completas (97 %)**. De las 4599 combinaciones probadas, es la de mayor fiabilidad demostrada (cota inferior del 95 % de su tasa de vueltas completas: 89 %), y ninguna es a la vez más rápida y más fiable (`docs/ESTUDIO_PID.md` §18). Basta con pegar `src/follow_line.py` y pulsar play.
+
+![Decisión](docs/img/estudio/10_decision.png)
 
 | Parámetros | v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Elegida, por defecto (5.29 s, 63/65)** | **93** | **1.697** | **7.79** | **0.01139** | **0.0632** | **7.42** | **0.643** | **0.00054** | **0.116** | **0.370** | **0.0357** | **14** | **0** |
+| `simple_v6`, la más rápida (4.99 s, 3/3; 70–76 % con 20 vueltas) | 99.7 | 1.697 | 7.79 | 0.01139 | 0.0632 | 7.42 | 0.643 | 0.00054 | 0.116 | 0.370 | 0.0357 | 14 | 0 |
 | #775 con w_max 14 y k_v_curva 1.8 (5.19 s, 34/40) | 95.5 | 1.8 | 9.79 | 0.0103 | 0.0782 | 10.3 | 0.657 | 0.0038 | 0.124 | 0.385 | 0.0438 | 14 | 0 |
 | `simple_v5` #775 (5.25 s, 4/4) | 95.5 | 2.63 | 9.79 | 0.0103 | 0.0782 | 10.3 | 0.657 | 0.0038 | 0.124 | 0.385 | 0.0438 | 12 | 0 |
 | `simple_v4` #194 en el barrido (5.76 s, 20/20) | 86 | 2.24 | 10.5 | 0.00860 | 0.0858 | 12.1 | 0.598 | 0.0033 | 0.105 | 0.462 | 0.045 | 12 | 0 |
 
 **Qué limita ahora la vuelta:**
 
-- **La primera curva (~43 m y ~72 m) y la chicane norte (350–360 m).** Con w_max = 12 la chicane norte concentraba el 67 % de los fallos por saturación del giro; con w_max = 14 casi deja de fallar, pero a partir de 16 el coche se pasa en la primera curva. Esa curva va al límite en todas las vueltas: a 95 m/s el coche solo la ve ~2 fotogramas antes, y el resultado depende del fotograma en que la detecta. Si se frena poco en curva (k_v_curva < 1.6), vuelve a fallar la chicane (`docs/ESTUDIO_PID.md` §15–16).
-- **La velocidad.** A 95 m/s el coche va al 85 % de `v_max` de media (el 94 % a 75), porque frena más en curva. De 94 a 96 m/s la mediana solo baja 0.06 s.
+- **La chicane norte (300–370 m) por encima de ~95 m/s.** Allí el coche llega a separarse ~250 px de la línea (de 320 que caben en la imagen) incluso en las vueltas que terminan; en las que chocan pierde parte de la línea hacia los 302 m y no se recupera. Por eso la velocidad elegida es 93 m/s: de 95 a 99.7 completa el 65–85 %, y a 93 el 97 % (`docs/ESTUDIO_PID.md` §17).
+- **La primera curva (~43 m y ~72 m).** Va al límite en todas las vueltas: a 93–95 m/s el coche la ve solo ~2 fotogramas antes, y el resultado depende del fotograma en que la detecta. Es la causa de casi todos los fallos que quedan (~1 de cada 30 vueltas).
+- **Cómo gira, más que cuánto corre.** Con w_max = 14, la fiabilidad depende sobre todo de `td` (31 %) y `k_hor` (14 %), y casi nada de v_max dentro de 93–100. Subir td a ~0.07 y k_hor a ~0.04 parece dar algo más de fiabilidad, pero falta confirmarlo (`docs/ESTUDIO_PID.md` §18).
 - **La cámara.** Ve la línea a 12.7 m como mucho: 3 fotogramas de anticipación a 86 m/s y 2.7 a 95.
 - **La banda del horizonte.** Su ganancia buena baja con la velocidad (0.064 a 75 m/s, 0.04–0.045 a 84–96). Filtrar `e_hor` no sirve: retrasarlo un fotograma vuelve inestable el giro (0 de 20 vueltas, `docs/ESTUDIO_PID.md` §14).
 - **El cálculo no limita.** La percepción tarda ≈ 1.2 ms, así que pasar el controlador a C++ no mejoraría la vuelta (`docs/PLAN.md` §5.8).
@@ -228,9 +237,10 @@ docker run -d --rm --name robotics --device /dev/dri --gpus all \
 
 tools/panel.sh                                   # panel en http://localhost:8050
 # En unibotics.org (ejercicio Follow Line, simulador local): pegar src/follow_line.py y pulsar play.
+# Arranca con los parámetros elegidos (5.29 s); el panel no hace falta para correr.
 # El puerto 7163 es la conexión de la web con el contenedor, no una página.
-tools/optimizar.sh tools/optimizador/config_v6.json   # optimizador (opcional)
-tools/optimizar.sh --informe simple_v6                # informe del estudio
+tools/optimizar.sh tools/optimizador/config_v7.json   # optimizador (opcional)
+tools/optimizar.sh --informe simple_v7                # informe del estudio
 tools/barrido.sh --help                               # barrido de un parámetro
 uv run --with pandas --with scikit-learn --with matplotlib --with scipy \
   python tools/optimizador/macro_analisis.py          # macroanálisis → docs/img/estudio/

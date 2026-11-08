@@ -7,8 +7,9 @@ percepción y control no dependen del simulador, así que las pruebas
 Ajuste en vivo: abre un servidor de telemetría en el puerto 6089. El panel
 (tools/panel.sh, en el PC) se conecta, dibuja las gráficas, cambia los
 parámetros de PARAMS sin reiniciar y graba todo en logs/. Sin panel, el
-controlador funciona igual. Con los valores por defecto es el control P de
-las fases 1–2 (v = 10 m/s, Kp = 0.008).
+controlador funciona igual. Los valores por defecto son la combinación elegida
+en el macroanálisis final (docs/ESTUDIO_PID.md §18): 5.29 s de mediana y 63 de 65
+vueltas completas a v_max = 93 m/s. FASE1 guarda el control P de las fases 1–2.
 
 Geometría (docs/PLAN.md §5.1 y §5.3): cámara pinhole de 640×480 y FOV horizontal
 de 90°, con H y CY calibrados en el simulador. Un píxel (x, y) por debajo del
@@ -53,36 +54,40 @@ ROJO_ALTO = ((170, 100, 60), (180, 255, 255))
 # (nombre, defecto, mín, máx, paso, grupo, descripción). El panel (tools/panel)
 # genera un slider por fila y los cambios llegan al bucle sin reiniciar.
 # Un parámetro se puede fijar también con la variable de entorno SJK_<NOMBRE>.
-# Con los valores por defecto el controlador es el P de las fases 1–2.
+# Los valores por defecto son los elegidos en el macroanálisis final (preset w14_v93_v6).
 PARAMS = [
-    ("v_max", 10.0, 1.0, 40.0, 0.5, "Velocidad", "m/s en recta"),
-    ("k_v_curva", 0.0, 0.0, 200.0, 1.0, "Velocidad",
+    ("v_max", 93.0, 1.0, 120.0, 0.5, "Velocidad", "m/s en recta"),
+    ("k_v_curva", 1.69696, 0.0, 200.0, 1.0, "Velocidad",
      "v_ref = v_max / (1 + k·|κ_lejos|). 0 = velocidad constante"),
-    ("v_min", 4.0, 1.0, 20.0, 0.5, "Velocidad", "m/s mínima del perfil de velocidad"),
+    ("v_min", 7.79264, 1.0, 20.0, 0.5, "Velocidad", "m/s mínima del perfil de velocidad"),
     ("a_sub", 0.0, 0.0, 50.0, 0.5, "Velocidad", "m/s² máx. al acelerar. 0 = sin límite"),
     ("a_fren", 0.0, 0.0, 100.0, 1.0, "Velocidad", "m/s² máx. al frenar. 0 = sin límite"),
-    ("kp", 0.008, 0.0, 0.04, 0.0005, "Giro (PID)", "rad/s por píxel de error"),
+    ("kp", 0.01139, 0.0, 0.04, 0.0005, "Giro (PID)", "rad/s por píxel de error"),
     ("ti", 0.0, 0.0, 10.0, 0.05, "Giro (PID)", "s, tiempo integral. 0 = sin I"),
-    ("td", 0.0, 0.0, 0.5, 0.005, "Giro (PID)", "s, tiempo derivativo. 0 = sin D"),
-    ("n_filtro", 10.0, 1.0, 30.0, 1.0, "Giro (PID)", "N del filtro de D: τd = Td/N"),
-    ("w_max", 6.0, 0.5, 10.0, 0.1, "Giro (PID)", "rad/s, saturación de w (anti-windup)"),
-    ("kv_kp", 0.0, 0.0, 0.5, 0.005, "Giro (PID)", "gain scheduling: Kp_ef = Kp / (1 + kv·v)"),
-    ("k_ff", 0.0, 0.0, 3.0, 0.05, "Prealimentación", "w_ff = k_ff · v · κ"),
-    ("t_mirar", 0.0, 0.0, 1.5, 0.02, "Mirada adelantada",
+    ("td", 0.06318, 0.0, 0.5, 0.005, "Giro (PID)", "s, tiempo derivativo. 0 = sin D"),
+    ("n_filtro", 7.41661, 1.0, 30.0, 1.0, "Giro (PID)", "N del filtro de D: τd = Td/N"),
+    ("w_max", 14.0, 0.5, 20.0, 0.1, "Giro (PID)", "rad/s, saturación de w (anti-windup)"),
+    ("kv_kp", 0.00054, 0.0, 0.5, 0.005, "Giro (PID)", "gain scheduling: Kp_ef = Kp / (1 + kv·v)"),
+    ("k_ff", 0.64259, 0.0, 3.0, 0.05, "Prealimentación", "w_ff = k_ff · v · κ"),
+    ("t_mirar", 0.11597, 0.0, 1.5, 0.02, "Mirada adelantada",
      "s: el error se mide a L = v·t m por delante (pure pursuit). 0 = filas cercanas (fases 1–2)"),
-    ("z_mirar_min", 1.0, 0.2, 6.0, 0.1, "Mirada adelantada", "m, L mínima (a poca velocidad)"),
-    ("k_hor", 0.0, 0.0, 0.03, 0.0005, "Horizonte",
+    ("z_mirar_min", 0.36997, 0.2, 6.0, 0.1, "Mirada adelantada", "m, L mínima (a poca velocidad)"),
+    ("k_hor", 0.0357, 0.0, 0.08, 0.0005, "Horizonte",
      "rad/s por px: w_hor = −k_hor·e_hor, gira hacia donde va la línea en el horizonte. 0 = desactivado"),
     ("fila_hor", 240.0, 236.0, 300.0, 1.0, "Horizonte", "primera fila de la banda (la del horizonte)"),
     ("n_filas_hor", 10.0, 1.0, 40.0, 1.0, "Horizonte", "filas de la banda (azul en la imagen)"),
-    ("v_perdida", 1.0, 0.0, 10.0, 0.5, "Otros", "m/s cuando no se ve la línea"),
+    ("v_perdida", 4.0, 0.0, 10.0, 0.5, "Otros", "m/s cuando no se ve la línea"),
     ("reinicio_auto", 1.0, 0.0, 1.0, 1.0, "Recuperación",
      "1 = si pierde la línea o se atasca, vuelve solo a la salida"),
-    ("t_perdida_max", 1.0, 0.2, 5.0, 0.1, "Recuperación", "s seguidos sin línea → reinicio"),
-    ("t_atasco", 1.0, 0.3, 5.0, 0.1, "Recuperación",
+    ("t_perdida_max", 0.8, 0.2, 5.0, 0.1, "Recuperación", "s seguidos sin línea → reinicio"),
+    ("t_atasco", 0.7, 0.3, 5.0, 0.1, "Recuperación",
      "s con velocidad real < 40 % de la mandada (choque) → reinicio"),
 ]
 _ALIAS_ENTORNO = {"v_max": "SJK_V"}  # nombres de las fases 1–2
+# Control P de las fases 1–2 (los valores por defecto de entonces), para comparar y para las pruebas
+FASE1 = {"v_max": 10.0, "k_v_curva": 0.0, "v_min": 4.0, "kp": 0.008, "td": 0.0, "n_filtro": 10.0, "w_max": 6.0,
+         "kv_kp": 0.0, "k_ff": 0.0, "t_mirar": 0.0, "z_mirar_min": 1.0, "k_hor": 0.0, "v_perdida": 1.0,
+         "t_perdida_max": 1.0, "t_atasco": 1.0}
 # El máximo de PARAMS es solo el recorrido inicial del slider: no se recorta por arriba,
 # para poder explorar sin techo (el optimizador desplaza su ventana). Solo estos
 # parámetros tienen un máximo de verdad. El mínimo sí se respeta siempre.
@@ -97,6 +102,10 @@ def params_por_defecto():
     return d
 
 
+def params_fase1():
+    return dict(params_por_defecto(), **FASE1)
+
+
 def ajustar_params(actual, cambios):
     """Aplica cambios {nombre: valor}: recorta al mínimo (y al máximo solo los de
     TOPE_DURO); ignora nombres desconocidos."""
@@ -109,7 +118,7 @@ def ajustar_params(actual, cambios):
     return nuevo
 
 
-KP = params_por_defecto()["kp"]  # compatibilidad con control_p de la fase 1
+KP = FASE1["kp"]  # compatibilidad con control_p de la fase 1
 LOG = os.environ.get("SJK_LOG")  # ruta del CSV; sin definir no se guarda nada
 PUERTO_PANEL = int(os.environ.get("SJK_PANEL_PORT", 6089))  # mapeado por docker (6080–6090)
 

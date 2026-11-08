@@ -15,8 +15,8 @@ def percep(e_px, kappa=0.0, kappa_lejos=None):
     return {"e_px": e_px, "kappa": kappa, "kappa_lejos": kappa_lejos}
 
 
-def test_por_defecto_es_el_control_p_de_la_fase_1():
-    ctl = fl.Controlador(dict(fl.params_por_defecto(), v_max=10.0, kp=0.008))
+def test_fase1_es_el_control_p():
+    ctl = fl.Controlador(dict(fl.params_fase1(), v_max=10.0, kp=0.008))
     for e in (40.0, -120.0, 0.0, 300.0):
         v, w, _ = ctl.paso(percep(e), 0.05)
         assert v == pytest.approx(10.0)
@@ -50,13 +50,13 @@ def test_anti_windup_no_integra_en_saturacion():
 
 
 def test_ff_gira_hacia_la_curva():
-    ctl = fl.Controlador(dict(fl.params_por_defecto(), k_ff=1.0, kp=0.0))
+    ctl = fl.Controlador(dict(fl.params_fase1(), k_ff=1.0, kp=0.0))
     _, w, partes = ctl.paso(percep(0.0, kappa=0.1), 0.05)
     assert w == pytest.approx(10.0 * 0.1) and partes["ff"] > 0  # κ > 0 izquierda → w > 0
 
 
 def test_perfil_de_velocidad_y_rampa():
-    prm = dict(fl.params_por_defecto(), v_max=20.0, k_v_curva=50.0, v_min=5.0)
+    prm = dict(fl.params_fase1(), v_max=20.0, k_v_curva=50.0, v_min=5.0)
     assert fl.v_referencia(0.0, 0.0, prm) == pytest.approx(20.0)
     assert fl.v_referencia(0.02, 0.0, prm) == pytest.approx(10.0)  # 20 / (1 + 50·0.02)
     assert fl.v_referencia(None, -0.02, prm) == pytest.approx(10.0)  # sin κ_lejos usa κ
@@ -74,7 +74,7 @@ def test_linea_perdida_frena_y_mantiene_el_giro():
 
 
 def test_ajustar_params_solo_recorta_el_minimo_e_ignora_desconocidos():
-    prm = fl.ajustar_params(fl.params_por_defecto(),
+    prm = fl.ajustar_params(fl.params_fase1(),
                             {"kp": 99.0, "v_max": 60.0, "td": -1.0, "no_existe": 1, "ti": "0.5"})
     assert prm["kp"] == 99.0 and prm["v_max"] == 60.0  # sin techo
     assert prm["td"] == 0.0 and prm["ti"] == 0.5 and "no_existe" not in prm
@@ -89,7 +89,7 @@ def test_params_desde_entorno(monkeypatch):
 
 
 def test_telemetria_manda_datos_y_recibe_parametros():
-    tel = fl.Telemetria(0, fl.params_por_defecto())  # puerto 0: lo elige el sistema
+    tel = fl.Telemetria(0, fl.params_fase1())  # puerto 0: lo elige el sistema
     puerto = tel.srv.getsockname()[1]
     cli = socket.create_connection(("127.0.0.1", puerto), timeout=2)
     f = cli.makefile("r")
@@ -122,7 +122,7 @@ def test_error_mirada_es_la_columna_de_la_linea_a_distancia_L():
 
 
 def test_controlador_usa_la_mirada_si_esta_activa():
-    prm = dict(fl.params_por_defecto(), t_mirar=0.2, kp=0.01)
+    prm = dict(fl.params_fase1(), t_mirar=0.2, kp=0.01)
     ctl = fl.Controlador(prm)
     p = {"e_px": 0.0, "kappa": 0.0, "kappa_lejos": None, "coef": (-0.5, 0.0, 0.0), "z_max": 10.0}
     _, w, partes = ctl.paso(p, 0.05)
@@ -130,7 +130,7 @@ def test_controlador_usa_la_mirada_si_esta_activa():
 
 
 def test_vigilante_sin_linea_y_choque():
-    prm = dict(fl.params_por_defecto(), t_perdida_max=1.0, t_atasco=0.5)
+    prm = dict(fl.params_fase1(), t_perdida_max=1.0, t_atasco=0.5)
     vig = fl.Vigilante()
     sin = {"validos": 0}
     con = {"validos": 10}
@@ -153,7 +153,14 @@ def test_elegir_salida():
 
 def test_horizonte_gira_hacia_la_curva_y_cero_lo_desactiva():
     p = {"e_px": 0.0, "kappa": 0.0, "kappa_lejos": None, "e_hor": -50.0}  # curva a la izquierda
-    _, w, partes = fl.Controlador(dict(fl.params_por_defecto(), k_hor=0.01)).paso(p, 0.05)
+    _, w, partes = fl.Controlador(dict(fl.params_fase1(), k_hor=0.01)).paso(p, 0.05)
     assert w == pytest.approx(0.5) and partes["hor"] == pytest.approx(0.5) and partes["ff"] == 0.0
-    _, w, _ = fl.Controlador().paso(p, 0.05)
+    _, w, _ = fl.Controlador(fl.params_fase1()).paso(p, 0.05)  # k_hor = 0
     assert w == 0.0
+
+
+def test_por_defecto_son_los_parametros_elegidos():
+    # macroanálisis final (ESTUDIO_PID §18): preset w14_v93_v6, 63/65 vueltas a 5.29 s
+    prm = fl.params_por_defecto()
+    assert prm["v_max"] == 93.0 and prm["w_max"] == 14.0 and prm["kp"] == 0.01139
+    assert prm["k_hor"] == 0.0357 and prm["t_mirar"] == 0.11597

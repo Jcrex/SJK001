@@ -707,3 +707,107 @@ Juntando los barridos (algunos valores se midieron dos veces):
 - Los barridos de un solo parámetro ya dan diferencias del tamaño del ruido. Se lanza `simple_v6` (`config_v6.json`):
   w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775 en el resto, para que el
   optimizador ajuste el PID y la mirada adelantada a la chicane norte con k_v_curva bajo.
+
+## 17. `simple_v6`, barridos de fiabilidad y `simple_v7` (2026-11-07 22:29 – 2026-11-08 02:28)
+
+### `simple_v6`: el más rápido (719 ensayos)
+
+`config_v6.json`: w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. La ventana de
+v_max subió sola hasta 94.75–101.8. A los ~200 ensayos se estancó: **mediana de ~5.0 s, mejor vuelta 4.94 s** y un 60 %
+de vueltas completas. Su mejor combinación por repeticiones (v_max 99.7, k_v_curva 1.70, kp 0.0114, td 0.063,
+k_ff 0.643, k_hor 0.036) completó 3 de 3 a 4.99 s y se guardó como preset `w14_v99_v6`.
+
+### Barridos de v_max y t_mirar sobre esa combinación
+
+| v_max | Completas | Mediana | Dónde falla |
+|---|---|---|---|
+| 86 | 14/20 (70 %) | 5.67 | primera curva (~72 m) |
+| 88 | 15/20 (75 %) | 5.56 | primera curva y ~125 m |
+| 90 | 31/40 (78 %) | 5.44 | primera curva |
+| 91 | 18/20 (90 %) | 5.39 | ~72 m |
+| 92 | 37/40 (92 %) | 5.34 | 43 m y ~126 m |
+| **93** | **20/20 (100 %)** | **5.29** | — |
+| 95 | 17/20 (85 %) | 5.21 | chicane y ~72 m |
+| 97–99.7 | 61/80 (76 %) | 5.00–5.13 | sobre todo la chicane norte |
+
+- **Por encima de ~95 m/s falla la chicane norte** (300–370 m): en las vueltas que chocan la cámara pasa de ver 13 filas
+  a 8 hacia los 302 m, el coche frena a ~58 m/s y no se recupera.
+- **Por debajo de 92 falla la primera curva**: los parámetros están ajustados para ~99 m/s y no encajan a otra velocidad.
+- 92–93 m/s es el punto dulce: 57/60.
+
+Barrido de `t_mirar` a 93 m/s (40 vueltas por valor): 0.06–0.08 fallan casi siempre en la chicane (1/6), 0.09 y 0.10
+dan 35/40 y **0.116 (el de la combinación) da 38/40**. Por encima de ~0.10 el coche ya mira al límite de lo que ve la
+cámara (~9 m) en recta, así que `t_mirar` no sirve para ver antes la primera curva.
+
+### `simple_v7`: fiabilidad y estabilidad (1009 ensayos)
+
+`config_v7.json`: v_max fija en 93, J con más peso a la estabilidad (peso_e_rms 0.5 → 2.0, peso_cambios_w 0.1 → 0.3) y
+la opción nueva `repetir` = 5 del optimizador: un candidato que completa se repite enseguida hasta 5 veces y se deja al
+primer fallo. Solo un candidato con las 5 vueltas puede ser el mejor; los mejores se confirman hasta 10.
+
+- 67–90 % de vueltas completas por generación. El mejor candidato completó **10/10 a 5.30 s con e_rms 213 px**
+  (la combinación de partida: 222 px), con td 0.069, k_ff 0.58, k_v_curva 1.98 y t_mirar 0.140. No llegó a 20 vueltas.
+- **Fallo del cronómetro encontrado y corregido** (`tools/panel/panel.py`): tras un choque, el primer fotograma de la
+  vuelta nueva aún traía la posición del choque y el siguiente ya estaba en la salida; ese salto cruzaba la meta y
+  cerraba una vuelta «completa» de 0.4–0.6 s. Pasó 3 veces en ~650 vueltas (2 en ensayos de `simple_v7`, que los
+  ponían como «mejores» con 4.4 s de media; se marcaron como fallidos). En los estudios y barridos anteriores no
+  ocurrió nunca. Ahora un salto de más de 250 m/s entre fotogramas no cuenta como paso por meta, la meta se fija en la
+  salida en el primer reinicio (antes era el primer punto visto, y un panel reiniciado con el coche en marcha la dejaba
+  a mitad de circuito) y el optimizador descarta las vueltas completas de menos del 80 % de la distancia.
+
+## 18. Macroanálisis final y parámetros elegidos (2026-11-08)
+
+Datos: **5531 ensayos** de `simple_v1`–`simple_v7` y 15 barridos (1346 vueltas más). `macro_analisis.py` añade el
+régimen w_max = 14 (`simple_v6`–`v7`, figuras con sufijo `_w14`) y una sección de decisión (figura 10).
+
+![Evolución](img/estudio/01_evolucion.png)
+
+### Régimen w_max = 14
+
+![Importancia w_max = 14](img/estudio/02_importancia_w14.png)
+![Dependencia parcial w_max = 14](img/estudio/03_dependencia_parcial_w14.png)
+
+- **Tiempo:** v_max explica el 91 % (R² = 0.90). Con magnitudes físicas, la velocidad en curva `v_curva` el 80 %.
+- **Fiabilidad:** la importancia la encabezan **td (31 %)** y k_hor (14 %). Con td ≥ 0.069 la probabilidad de completar
+  sube de ~55 % a ~67 % (dependencia parcial), y con k_hor ≥ 0.039 de ~59 % a ~68 %. La v_max apenas cuenta dentro de
+  93–100 (4 %): lo que decide es cómo gira, no cuánto corre. El modelo predice poco (AUC = 0.72): sigue habiendo mucho
+  azar en cada vuelta.
+- **Dónde falla:** 300–310 m (16 %), 350–360 m (12 %), primera curva 40–50 m (9 %) y 120–130 m (8 %).
+
+![Frontera w_max = 14](img/estudio/05_frontera_w14.png)
+![Palancas w_max = 14](img/estudio/08_palancas_w14.png)
+
+### Decisión
+
+![Decisión](img/estudio/10_decision.png)
+
+Se juntan todas las vueltas, de estudios y barridos, de cada combinación exacta de parámetros (4599 combinaciones; 56
+con ≥ 20 vueltas). Se elige la de mayor **fiabilidad demostrada**: la cota inferior del 95 % (Wilson) de su tasa de
+vueltas completas, que penaliza las rachas cortas (10/10 da una cota del 72 %, 20/20 del 84 %).
+
+| Combinación | Vueltas | Completas | Cota 95 % | Mediana | e_rms |
+|---|---|---|---|---|---|
+| **`w14_v93_v6` (elegida)** | **65** | **63 (97 %)** | **89 %** | **5.29 s** | **222 px** |
+| Misma combinación a 92 m/s | 40 | 37 (92 %) | 80 % | 5.34 s | 232 px |
+| Misma a 98 m/s | 20 | 19 (95 %) | 76 % | 5.07 s | 235 px |
+| `w14_v95_kvc18` | 41 | 35 (85 %) | 72 % | 5.19 s | 236 px |
+| `w12_v86_kh045` | 20 | 20 (100 %) | 84 % | 5.76 s | 225 px |
+| `simple_v7`, mejor candidato | 10 | 10 (100 %) | 72 % | 5.30 s | 213 px |
+
+**Elegida: `w14_v93_v6`**, la de mayor cota de todas. Además está en la frontera: ninguna combinación es a la vez más
+rápida y más fiable. A 98 m/s la misma combinación dio 19/20 a 5.07 s, pero a 97, 99 y 99.7 dio 65–75 %: esa tanda fue
+suerte. Queda como **valor por defecto de `src/follow_line.py`**:
+
+| v_max | k_v_curva | v_min | kp | td | n_filtro | k_ff | kv_kp | t_mirar | z_mirar_min | k_hor | w_max | ti |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 93 | 1.697 | 7.79 | 0.01139 | 0.0632 | 7.42 | 0.643 | 0.00054 | 0.116 | 0.370 | 0.0357 | 14 | 0 |
+
+Recuperación: v_perdida = 4, t_perdida_max = 0.8 s, t_atasco = 0.7 s, reinicio automático activado.
+
+### Pendiente
+
+- El mejor candidato de `simple_v7` (td 0.069, 10/10, e_rms 213) y la dependencia parcial apuntan a que subir td a
+  ~0.07 y k_hor a ~0.04 daría algo más de fiabilidad y menos oscilación. Habría que confirmarlo con ≥ 40 vueltas antes
+  de cambiar el valor por defecto.
+- La primera curva sigue fallando ~1 vez de cada 30: depende del fotograma en que se detecta y ningún parámetro lo
+  elimina del todo.

@@ -43,7 +43,8 @@ plt.rcParams.update({"axes.grid": True, "grid.alpha": 0.3, "axes.spines.top": Fa
                      "axes.spines.right": False, "figure.dpi": 110})
 
 
-# Regímenes con el mismo espacio de parámetros: w_max = 6 (simple_v3) y w_max = 12 (simple_v4–v5).
+# Regímenes con el mismo espacio de parámetros: w_max = 6 (simple_v3), w_max = 12 (simple_v4–v5) y
+# w_max = 14 (simple_v6–v7; simple_v7 con v_max fija en 93 y otra J, más peso a la estabilidad).
 # Cada uno tiene su corte de «rápido», sus tramos de v_max y su sufijo en los nombres de las figuras.
 REGIMENES = [
     {"nombre": "simple_v3 (w_max = 6)", "prefijos": ("simple_v3",), "sufijo": "", "rapido": 48,
@@ -52,6 +53,9 @@ REGIMENES = [
     {"nombre": "simple_v4–v5 (w_max = 12)", "prefijos": ("simple_v4", "simple_v5"), "sufijo": "_w12", "rapido": 90,
      "tramos": [55, 65, 70, 74, 78, 84, 88, 90, 92, 94, 96, 98, 105], "palancas_desde": 90,
      "cortes_kvc": [1.5, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 6, 11], "cortes_khor": [0.02, 0.035, 0.04, 0.045, 0.05, 0.06, 0.08]},
+    {"nombre": "simple_v6–v7 (w_max = 14)", "prefijos": ("simple_v6", "simple_v7"), "sufijo": "_w14", "rapido": 93,
+     "tramos": [90, 93.5, 95, 97, 98, 99, 100, 103], "palancas_desde": 92.5,
+     "cortes_kvc": [1.0, 1.4, 1.6, 1.8, 2.0, 2.2, 2.6], "cortes_khor": [0.025, 0.033, 0.036, 0.039, 0.042, 0.055]},
 ]
 
 
@@ -66,7 +70,7 @@ def titulo(t):
 # ---------------------------------------------------------------- carga
 def cargar():
     dfs = []
-    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4", "simple_v5"]:
+    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4", "simple_v5", "simple_v6", "simple_v7"]:
         ruta = OPT / f"{f}_ensayos.csv"
         if ruta.exists():
             d = pd.read_csv(ruta)
@@ -92,7 +96,7 @@ def cargar():
 
 # ---------------------------------------------------------------- 1. evolución
 MARCAS = ("simple_v1", "simple_v2", "simple_v3", "simple_v3_g4", "simple_v3_g5", "simple_v3_g6", "simple_v4",
-          "simple_v5")
+          "simple_v5", "simple_v6", "simple_v7")
 
 
 def evolucion(df):
@@ -119,7 +123,7 @@ def evolucion(df):
     best = ok.set_index("orden").tiempo_s.cummin()
     ax.step(best.index, best.values, where="post", c=NEGRO, lw=1.5, label="mejor tiempo hasta el momento")
     ax.set_ylabel("tiempo de vuelta (s)")
-    ax.set_ylim(5.0, 30)
+    ax.set_ylim(4.8, 30)
     ax.legend(loc="center right")
     ax = axs[1]
     roll = df.ok.rolling(60, min_periods=20).mean() * 100
@@ -399,7 +403,8 @@ def tendencia(df):
         print(f"Spearman con v_max (w_max = {wm:g}): "
               + ", ".join(f"{k} {v:+.2f}" for k, v in sorted(pend[wm].items(), key=lambda kv: -abs(kv[1]))))
 
-    colores = {6.0: AZUL, 12.0: "#f59e0b"}
+    colores = {6.0: AZUL, 12.0: "#f59e0b", 14.0: VERDE}
+    lineas = {6.0: NEGRO, 12.0: "#92400e", 14.0: "#065f46"}
     fig, axs = plt.subplots(3, 5, figsize=(17, 9.5))
     for ax, c in zip(axs.flat, cols):
         ax.scatter(ok.v_max, ok[c], s=3, c=GRIS, alpha=0.2)
@@ -407,14 +412,15 @@ def tendencia(df):
             b = buenos[buenos.w_max == wm]
             col = colores.get(wm, VERDE)
             ax.scatter(b.v_max, b[c], s=8, c=col, alpha=0.5)
-            ax.plot(t.v_max, t[c], c=NEGRO if wm == 6 else "#92400e", lw=2, marker="o", ms=3)
+            ax.plot(t.v_max, t[c], c=lineas.get(wm, NEGRO), lw=2, marker="o", ms=3)
         ax.set_title(c, fontsize=10)
         if c == "k_v_curva":
             ax.set_ylim(-0.5, 14)
         ax.set_xlabel("v_max", fontsize=8)
     axs.flat[-1].axis("off")
     axs.flat[-1].text(0.0, 0.5, "gris: vueltas completas\nazul: 15 % más rápido, w_max = 6\n(simple_v1–v3)\n"
-                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4–v5)\nlíneas: medianas por tramo",
+                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4–v5)\nverde: 15 % más rápido, w_max = 14\n(simple_v6–v7)\n"
+                      "líneas: medianas por tramo",
                       fontsize=10, va="center")
     fig.suptitle("Tendencia: hacia dónde se mueven los parámetros buenos al subir la velocidad")
     fig.tight_layout()
@@ -611,6 +617,77 @@ def palancas(df, reg):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------- 9. decisión final
+def wilson(k, n, z=1.96):
+    """Cota inferior (95 %) de la tasa de vueltas completas: con pocas vueltas, 10/10 no es 100 %."""
+    p = k / n
+    return (p + z * z / (2 * n) - z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n)
+
+
+def decision():
+    """Junta todas las vueltas (estudios y barridos) de cada combinación de parámetros y elige la de
+    mayor fiabilidad demostrada (cota inferior de Wilson); a igualdad, la más rápida. Solo cuentan
+    combinaciones con ≥ 20 vueltas: con menos, una racha de suerte las pondría arriba."""
+    titulo("9. DECISIÓN: MEJOR COMBINACIÓN EN TIEMPO Y FIABILIDAD")
+    cols = PARAMS + ["w_max"]
+    trozos = []
+    for ruta in sorted(OPT.glob("simple_v*_ensayos.csv")) + sorted(OPT.glob("barrido_*.csv")):
+        d = pd.read_csv(ruta)
+        if "w_max" not in d or not len(d):
+            continue
+        d["k_hor"] = d["k_hor"].fillna(0.0) if "k_hor" in d else 0.0
+        d["fuente"] = ruta.stem.replace("_ensayos", "")
+        trozos.append(d[cols + ["completada", "tiempo_s", "e_rms", "cambios_w_s", "fuente"]])
+    a = pd.concat(trozos, ignore_index=True)
+    a["clave"] = a[cols].round(4).astype(str).agg("|".join, axis=1)
+    g = a.groupby("clave").agg(n=("completada", "size"), ok=("completada", "sum"),
+                               fuentes=("fuente", lambda s: ", ".join(sorted(set(s)))))
+    g = g.join(a[a.completada == 1].groupby("clave").agg(t_med=("tiempo_s", "median"), e_rms=("e_rms", "median"),
+                                                          cambios_w=("cambios_w_s", "median")))
+    g = g.join(a.groupby("clave")[cols].first())
+    g["tasa"], g["cota"] = g.ok / g.n, wilson(g.ok, g.n)
+    G = g[g.n >= 20].sort_values(["cota", "t_med"], ascending=[False, True])
+    print(f"{len(g)} combinaciones distintas; {len(G)} con ≥ 20 vueltas.")
+    with pd.option_context("display.width", 250):
+        print(G[["n", "ok", "tasa", "cota", "t_med", "e_rms", "cambios_w", "v_max", "w_max", "k_v_curva", "kp",
+                 "td", "k_ff", "k_hor", "t_mirar"]].head(15).round(3).to_string(index=False))
+    # Frontera: ninguna otra es a la vez más rápida y más fiable
+    frontera, mejor = [], -1.0
+    for i, r in G.sort_values("t_med").iterrows():
+        if r.cota > mejor:
+            frontera.append(i)
+            mejor = r.cota
+    elegida = G.index[0]
+    e = G.loc[elegida]
+    print(f"\nElegida: {e.ok:.0f}/{e.n:.0f} completas ({e.tasa:.0%}, cota {e.cota:.0%}), {e.t_med:.2f} s, "
+          f"e_rms {e.e_rms:.0f} px\n" + "  ".join(f"{c}={e[c]:.5g}" for c in cols))
+    poco = g[(g.n >= 5) & (g.n < 20) & (g.ok == g.n)].sort_values("e_rms").head(5)
+    if len(poco):
+        print("\nSin vueltas suficientes para decidir (todas completas, < 20 vueltas):")
+        print(poco[["n", "ok", "cota", "t_med", "e_rms", "v_max", "w_max", "k_v_curva", "kp", "td", "k_ff",
+                    "t_mirar", "fuentes"]].round(4).to_string(index=False))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    color = G.w_max.map({6.0: AZUL, 12.0: "#f59e0b", 14.0: VERDE}).fillna(GRIS)
+    ax.errorbar(G.t_med, G.tasa * 100, yerr=[(G.tasa - G.cota) * 100, np.zeros(len(G))], fmt="none",
+                ecolor=GRIS, alpha=0.5, lw=1)
+    ax.scatter(G.t_med, G.tasa * 100, s=G.n * 3, c=color, alpha=0.8, edgecolor="white", lw=0.5)
+    F = G.loc[frontera].sort_values("t_med")
+    ax.plot(F.t_med, F.cota * 100, c=NEGRO, lw=1, ls="--", label="frontera (cota inferior)")
+    ax.scatter([e.t_med], [e.tasa * 100], s=e.n * 3 + 120, facecolor="none", edgecolor=ROJO, lw=2,
+               label=f"elegida: v_max {e.v_max:g}, w_max {e.w_max:g} ({e.ok:.0f}/{e.n:.0f}, {e.t_med:.2f} s)")
+    for wm, c in [(6.0, AZUL), (12.0, "#f59e0b"), (14.0, VERDE)]:
+        ax.scatter([], [], c=c, s=40, label=f"w_max = {wm:g}")
+    ax.set_xlabel("tiempo mediano de las vueltas completas (s)")
+    ax.set_ylabel("% vueltas completas (barra: hasta la cota inferior del 95 %)")
+    ax.set_title("Combinaciones con ≥ 20 vueltas: fiabilidad frente a tiempo (tamaño = vueltas)")
+    ax.legend(loc="lower right", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIG / "10_decision.png")
+    plt.close(fig)
+    return e
+
+
 def main():
     df = cargar()
     resumen = {}
@@ -624,6 +701,7 @@ def main():
     for reg in REGIMENES:
         palancas(df, reg)
     barridos()
+    decision()
     titulo("MEJORES VUELTAS INDIVIDUALES")
     print(df[df.ok == 1].nsmallest(10, "tiempo_s")[["estudio", "tiempo_s", "J", "e_rms", "cambios_w_s"] + PARAMS]
           .round(4).to_string(index=False))
