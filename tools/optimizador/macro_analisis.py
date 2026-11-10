@@ -6,6 +6,9 @@ Responde a tres preguntas:
      completas y sobre la PROBABILIDAD DE COMPLETAR, que no dependen de lo mismo.
   3. ¿Hacia dónde tiende el PID? Cómo se mueven los mejores parámetros al subir v_max
      y qué término del control (P, D, FF, HOR) hace el trabajo en la pista.
+  4. Con tandas de 5 vueltas seguidas sin reiniciar (simple_v9): ¿qué fiabilidad hay
+     en vueltas lanzadas, dónde falla y qué combinación aguanta? (sección 11, aparte:
+     un ensayo de simple_v9 es una tanda, no una vuelta, y no se mezcla con el resto).
 
 Se puede ejecutar con el optimizador en marcha (solo lee los CSV):
 
@@ -44,7 +47,8 @@ plt.rcParams.update({"axes.grid": True, "grid.alpha": 0.3, "axes.spines.top": Fa
 
 
 # Regímenes con el mismo espacio de parámetros: w_max = 6 (simple_v3), w_max = 12 (simple_v4–v5) y
-# w_max = 14 (simple_v6–v7; simple_v7 con v_max fija en 93 y otra J, más peso a la estabilidad).
+# w_max = 14 (simple_v6–v8; simple_v7 con v_max fija en 93 y otra J, más peso a la estabilidad; simple_v8
+# con la J de simple_v7 y v_max en 93–97). simple_v9 (tandas de 5 vueltas) va aparte, en la sección 11.
 # Cada uno tiene su corte de «rápido», sus tramos de v_max y su sufijo en los nombres de las figuras.
 REGIMENES = [
     {"nombre": "simple_v3 (w_max = 6)", "prefijos": ("simple_v3",), "sufijo": "", "rapido": 48,
@@ -53,7 +57,7 @@ REGIMENES = [
     {"nombre": "simple_v4–v5 (w_max = 12)", "prefijos": ("simple_v4", "simple_v5"), "sufijo": "_w12", "rapido": 90,
      "tramos": [55, 65, 70, 74, 78, 84, 88, 90, 92, 94, 96, 98, 105], "palancas_desde": 90,
      "cortes_kvc": [1.5, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 6, 11], "cortes_khor": [0.02, 0.035, 0.04, 0.045, 0.05, 0.06, 0.08]},
-    {"nombre": "simple_v6–v7 (w_max = 14)", "prefijos": ("simple_v6", "simple_v7"), "sufijo": "_w14", "rapido": 97,
+    {"nombre": "simple_v6–v8 (w_max = 14)", "prefijos": ("simple_v6", "simple_v7", "simple_v8"), "sufijo": "_w14", "rapido": 97,
      "tramos": [90, 93.5, 95, 97, 98, 99, 100, 103], "palancas_desde": 92.5,
      "cortes_kvc": [1.0, 1.4, 1.6, 1.8, 2.0, 2.2, 2.6], "cortes_khor": [0.025, 0.033, 0.036, 0.039, 0.042, 0.055]},
 ]
@@ -70,7 +74,8 @@ def titulo(t):
 # ---------------------------------------------------------------- carga
 def cargar():
     dfs = []
-    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4", "simple_v5", "simple_v6", "simple_v7"]:
+    for f in ["simple_v1", "simple_v2", "simple_v3", "simple_v4", "simple_v5", "simple_v6", "simple_v7",
+              "simple_v8"]:
         ruta = OPT / f"{f}_ensayos.csv"
         if ruta.exists():
             d = pd.read_csv(ruta)
@@ -96,7 +101,7 @@ def cargar():
 
 # ---------------------------------------------------------------- 1. evolución
 MARCAS = ("simple_v1", "simple_v2", "simple_v3", "simple_v3_g4", "simple_v3_g5", "simple_v3_g6", "simple_v4",
-          "simple_v5", "simple_v6", "simple_v7")
+          "simple_v5", "simple_v6", "simple_v7", "simple_v8")
 
 
 def evolucion(df):
@@ -423,7 +428,7 @@ def tendencia(df):
         ax.set_xlabel("v_max", fontsize=8)
     axs.flat[-1].axis("off")
     axs.flat[-1].text(0.0, 0.5, "gris: vueltas completas\nazul: 15 % más rápido, w_max = 6\n(simple_v1–v3)\n"
-                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4–v5)\nverde: 15 % más rápido, w_max = 14\n(simple_v6–v7)\n"
+                      "naranja: 15 % más rápido, w_max = 12\n(simple_v4–v5)\nverde: 15 % más rápido, w_max = 14\n(simple_v6–v8)\n"
                       "líneas: medianas por tramo",
                       fontsize=10, va="center")
     fig.suptitle("Tendencia: hacia dónde se mueven los parámetros buenos al subir la velocidad")
@@ -638,6 +643,8 @@ def decision():
     cols = PARAMS + ["w_max"]
     trozos = []
     for ruta in sorted(OPT.glob("simple_v*_ensayos.csv")) + sorted(OPT.glob("barrido_*.csv")):
+        if ruta.stem in ESTUDIOS_TANDAS:
+            continue  # una fila es una tanda de vueltas seguidas, no una vuelta (sección 11)
         d = pd.read_csv(ruta)
         if "w_max" not in d or not len(d):
             continue
@@ -727,11 +734,280 @@ def pesos(imps):
         ax.set_xlim(0, 1.05)
         ax.set_xlabel("peso (importancia por permutación, suma 1)")
     axs[0].set_yticks(y, orden)
-    fig.suptitle("Qué pesa en cada métrica: w_max = 6 (simple_v3), 12 (v4–v5) y 14 (v6–v7)")
+    fig.suptitle("Qué pesa en cada métrica: w_max = 6 (simple_v3), 12 (v4–v5) y 14 (v6–v8)")
     fig.tight_layout()
     fig.savefig(FIG / "11_pesos.png")
     plt.close(fig)
     return tabla
+
+
+# ---------------------------------------------------------------- 11. tandas de vueltas seguidas
+ESTUDIOS_TANDAS = ("simple_v9_ensayos",)  # una fila = una tanda de «vueltas_seguidas» vueltas sin reiniciar
+LONG_VUELTA = 424.0  # m que mide el panel en una vuelta completa (421–426)
+
+
+def _telemetria_tandas(desde):
+    """Cada vuelta del panel desde `desde` (fecha del primer ensayo de tandas) con su posición en la
+    tanda: 1 = desde parado (tras «reinicio: pedido»), 2+ = lanzadas. Los fallos llevan la posición
+    (x, y) y la velocidad del último fotograma antes del choque."""
+    filas = []
+    for f in sorted(glob.glob(str(RAIZ / "logs" / "2026*_panel.csv"))):
+        if Path(f).name[:15] < desde:
+            continue
+        fv = f.replace(".csv", "_vueltas.csv")
+        if not Path(fv).exists():
+            continue
+        t = pd.read_csv(f, low_memory=False, usecols=["t", "vuelta", "marca", "x", "y", "v", "w", "w_max"])
+        v = pd.read_csv(fv).set_index("vuelta")
+        inicio = None  # número de vuelta del panel con que empezó la tanda en curso
+        pedidos = t[t.marca == "reinicio: pedido"].vuelta.tolist()
+        for n, lap in v.iterrows():
+            previos = [p for p in pedidos if p <= n]
+            if not previos:
+                continue
+            inicio = previos[-1]
+            s = t[t.vuelta == n]
+            if lap.completada and lap.distancia_m < 0.8 * 430:
+                continue  # vuelta falsa del cronómetro
+            fila = {"fichero": Path(f).name[:15], "vuelta": n, "pos": int(n - inicio + 1),
+                    "ok": int(lap.completada), "motivo": lap.motivo, "tiempo_s": lap.tiempo_s,
+                    "distancia_m": lap.distancia_m, "e_rms": lap.e_rms, "cambios_w_s": lap.cambios_w_s,
+                    "v_max": lap.v_max, "sat_w": float((s.w.abs() >= s.w_max - 1e-3).mean()) if len(s) else np.nan,
+                    "v_salida": float(s.v.iloc[:5].mean()) if len(s) else np.nan}
+            if not lap.completada and len(s):
+                u = s.dropna(subset=["x"]).iloc[-1] if s.x.notna().any() else None
+                if u is not None:
+                    fila.update(x=u.x, y=u.y, v_choque=u.v)
+            filas.append(fila)
+    return pd.DataFrame(filas)
+
+
+def tandas():
+    """simple_v9: cada ensayo son 5 vueltas seguidas con un solo reinicio al principio."""
+    titulo("11. TANDAS DE 5 VUELTAS SEGUIDAS (simple_v9)")
+    trozos = []
+    for nombre in ESTUDIOS_TANDAS:
+        ruta = OPT / f"{nombre}.csv"
+        if ruta.exists():
+            trozos.append(pd.read_csv(ruta))
+    if not trozos:
+        print("No hay estudios de tandas.")
+        return None
+    d = pd.concat(trozos, ignore_index=True)
+    d["fecha"] = pd.to_datetime(d.fecha)
+    d = d.sort_values("fecha").reset_index(drop=True)
+    N = 5
+    d["vueltas_ok"] = d.vueltas_ok.fillna(0).astype(int)
+    d["ok"] = d.completada.astype(int)
+    d["intentadas"] = d.vueltas_ok + (1 - d.ok)
+    d["clave"] = d[PARAMS].round(5).astype(str).agg("|".join, axis=1)
+    tiempos = d.tiempos.fillna("").astype(str).str.split().apply(lambda l: [float(x) for x in l])
+    d["t_lanzada"] = tiempos.apply(lambda l: np.mean(l[1:]) if len(l) > 1 else np.nan)
+    print(f"{len(d)} tandas ({d.fecha.min():%d %H:%M}–{d.fecha.max():%H:%M}), {d.vueltas_ok.sum()} vueltas completas "
+          f"de {d.intentadas.sum()} intentadas ({d.vueltas_ok.sum() / d.intentadas.sum():.1%} por vuelta)")
+    print(f"Tandas 5/5: {d.ok.sum()} ({d.ok.mean():.1%}). Vueltas completas por tanda: "
+          f"{d.vueltas_ok.value_counts().sort_index().to_dict()}. Fallos: {d[d.ok == 0].motivo.value_counts().to_dict()}")
+    # Riesgo por vuelta: P(fallar la k-ésima | llegó a empezarla)
+    riesgo = []
+    for k in range(1, N + 1):
+        llegan = int((d.vueltas_ok >= k - 1).sum())
+        fallan = int(((d.vueltas_ok == k - 1) & (d.ok == 0)).sum())
+        riesgo.append({"vuelta": k, "llegan": llegan, "fallan": fallan, "p_fallo": fallan / llegan,
+                       "lo": 1 - wilson(llegan - fallan, llegan, ) if llegan else np.nan})
+    R = pd.DataFrame(riesgo)
+    # Intervalo de Wilson para p_fallo (complemento de la cota de completar)
+    R["hi"] = 1 - wilson(R.llegan - R.fallan, R.llegan)
+    R["lo"] = wilson(R.fallan, R.llegan)
+    print("\nRiesgo de fallar cada vuelta de la tanda (sobre las que llegan a empezarla):")
+    print(R.round(3).to_string(index=False))
+    L = pd.DataFrame(tiempos.tolist()).reindex(columns=range(N))
+    print("\nTiempo medio por posición en la tanda (s): "
+          + "  ".join(f"{k + 1}: {L[k].mean():.3f} (n={L[k].count()})" for k in range(N)))
+
+    # Telemetría: dónde falla, desde parado frente a lanzada
+    tel = _telemetria_tandas(d.fecha.min().strftime("%Y%m%d-%H%M%S"))
+    if len(tel):
+        tel = tel[tel.pos <= N]
+        ko = tel[tel.ok == 0]
+        print(f"\nTelemetría: {len(tel)} vueltas del panel ({len(ko)} fallidas)")
+        for nombre, sub in [("1.ª (desde parado)", tel[tel.pos == 1]), ("lanzadas (2.ª–5.ª)", tel[tel.pos > 1])]:
+            f = sub[sub.ok == 0]
+            print(f"  {nombre}: {len(sub)} vueltas, fallan {len(f) / max(len(sub), 1):.1%}; "
+                  f"e_rms {sub[sub.ok == 1].e_rms.median():.0f} px, giro saturado {sub.sat_w.median():.1%}, "
+                  f"v al empezar {sub.v_salida.median():.1f} m/s")
+            if len(f):
+                h = (f.distancia_m // 10 * 10).value_counts(normalize=True).head(4)
+                print("     dónde: " + ", ".join(f"{int(m)}–{int(m) + 10} m {p:.0%}" for m, p in h.items()))
+
+    # La zona a la que convergió el optimizador: tandas cerca de la mejor combinación
+    g = d.groupby("clave").agg(n=("ok", "size"), ok=("ok", "sum"), vueltas=("vueltas_ok", "sum"),
+                               intentadas=("intentadas", "sum"), ensayo=("ensayo", "min"))
+    g = g.join(d[d.ok == 1].groupby("clave").agg(t_med=("tiempo_s", "median"), t_lanz=("t_lanzada", "median"),
+                                                 e_rms=("e_rms", "median"), cambios_w=("cambios_w_s", "median")))
+    g = g.join(d.groupby("clave")[PARAMS].first())
+    g["p_vuelta"] = g.vueltas / g.intentadas
+    g["cota_vuelta"] = wilson(g.vueltas, g.intentadas)
+    g["p_tanda"], g["cota_tanda"] = g.ok / g.n, wilson(g.ok, g.n)
+    G = g[g.intentadas >= 15].sort_values(["cota_vuelta", "t_med"], ascending=[False, True])
+    print(f"\n{len(g)} combinaciones; {len(G)} con ≥ 15 vueltas intentadas. Mejores por fiabilidad por vuelta:")
+    with pd.option_context("display.width", 250):
+        print(G[["ensayo", "n", "ok", "vueltas", "intentadas", "cota_vuelta", "t_med", "t_lanz", "e_rms", "cambios_w"]
+                + PARAMS].head(12).round(4).to_string(index=False))
+    e = G.iloc[0]
+    # Vecindad: tandas a < 15 % del ancho de la ventana en todos los parámetros (salvo kv_kp). Con 5–10 %
+    # solo entra la propia combinación; con 15 % la estimación ya junta ~25 tandas de la zona.
+    anchos = d[PARAMS].quantile(0.98) - d[PARAMS].quantile(0.02)
+    dist = ((d[PARAMS] - e[PARAMS]).abs() / anchos.replace(0, 1)).drop(columns=["kv_kp"]).max(axis=1)
+    zona = d[dist < 0.15]
+    zv, zi = zona.vueltas_ok.sum(), zona.intentadas.sum()
+    print(f"\nElegida: ensayo #{e.ensayo:.0f}: {e.ok:.0f}/{e.n:.0f} tandas, {e.vueltas:.0f}/{e.intentadas:.0f} vueltas "
+          f"(cota {e.cota_vuelta:.0%}), {e.t_med:.3f} s por vuelta en la tanda, {e.t_lanz:.3f} s lanzada, "
+          f"e_rms {e.e_rms:.0f}\n" + "  ".join(f"{c}={e[c]:.5g}" for c in PARAMS))
+    print(f"Su vecindad (±15 % de la ventana, {len(zona)} tandas de {zona.clave.nunique()} combinaciones): "
+          f"{zona.ok.sum()}/{len(zona)} tandas 5/5 ({zona.ok.mean():.0%}), {zv}/{zi} vueltas "
+          f"({zv / zi:.1%}, cota {wilson(zv, zi):.0%}); tiempo lanzada {zona.t_lanzada.median():.3f} s")
+    print(f"Con la fiabilidad por vuelta de la vecindad, P(5/5) esperada = {(zv / zi) ** N:.0%}; "
+          f"con la de w14_v93_v6 en una vuelta (63/65) sería {(63 / 65) ** N:.0%}.")
+    base = d[(d.v_max.round(3) == 93.0) & (d.kp.round(5) == 0.01139)]
+    if len(base):
+        print(f"w14_v93_v6 en tandas: {base.ok.sum()}/{len(base)} tandas, {base.vueltas_ok.sum()}/{base.intentadas.sum()} vueltas")
+
+    # Importancia sobre las tandas
+    print("\nImportancia en las tandas (bosque aleatorio, permutación):")
+    obj = {"P(5/5)": (d, "ok", True), "vueltas completas": (d, "vueltas_ok", False),
+           "tiempo lanzada": (d[d.t_lanzada.notna()], "t_lanzada", False)}
+    imps, cal, mods = {}, {}, {}
+    for nombre, (sub, col, clas) in obj.items():
+        m, imp, c = _rf_importancia(sub[PARAMS], sub[col], clas)
+        imps[nombre], cal[nombre], mods[nombre] = imp / imp.sum(), c, (m, sub)
+        rho = pd.Series({p: spearmanr(sub[p], sub[col]).statistic for p in PARAMS})
+        print(f"  {nombre} (n={len(sub)}, {'AUC' if clas else 'R²'} {c:.3f}): "
+              + ", ".join(f"{k} {v:.2f} ({rho[k]:+.2f})" for k, v in imps[nombre].sort_values(ascending=False)
+                          .head(6).items()))
+    I = pd.DataFrame(imps)
+
+    # Figura 12: fiabilidad y tiempo en las tandas
+    fig, axs = plt.subplots(2, 3, figsize=(16, 9.5))
+    ax = axs[0, 0]
+    x = np.arange(len(d))
+    ax.plot(x, d.ok.rolling(40, min_periods=10).mean() * 100, c=VERDE, label="% tandas 5/5 (ventana 40)")
+    ax.plot(x, (d.vueltas_ok.rolling(40, min_periods=10).sum() / d.intentadas.rolling(40, min_periods=10).sum())
+            * 100, c=AZUL, label="% vueltas completas (ventana 40)")
+    for i, (est, x0) in enumerate(d.groupby("estudio", sort=False).apply(lambda s: s.index.min()).items()):
+        ax.axvline(x0, c=GRIS, lw=0.8, ls="--")
+        ax.text(x0 + 3, 3 + 6 * (i % 2), est.replace("simple_", ""), fontsize=7, color="#4b5563")
+    ax.set_ylim(0, 100)
+    ax.set_xlabel("tanda (orden)")
+    ax.set_title("Evolución del estudio")
+    ax.legend(fontsize=8, loc="center right")
+    ax = axs[0, 1]
+    cuenta = d.vueltas_ok.value_counts().reindex(range(N + 1), fill_value=0)
+    ax.bar(cuenta.index, cuenta.values, color=[ROJO] * N + [VERDE])
+    for k, c in cuenta.items():
+        ax.text(k, c, f"{c}", ha="center", va="bottom", fontsize=8)
+    ax.set_xlabel("vueltas completas en la tanda")
+    ax.set_ylabel("tandas")
+    ax.set_title(f"{d.ok.mean():.0%} acaban las 5")
+    ax = axs[0, 2]
+    ax.errorbar(R.vuelta, R.p_fallo * 100, yerr=[(R.p_fallo - R.lo) * 100, (R.hi - R.p_fallo) * 100], fmt="o-",
+                c=ROJO, capsize=4)
+    for _, r in R.iterrows():
+        ax.text(r.vuelta + 0.08, r.p_fallo * 100, f"{int(r.fallan)}/{int(r.llegan)}", fontsize=8)
+    ax.set_xticks(range(1, N + 1), ["1.ª\n(parado)"] + [f"{k}.ª" for k in range(2, N + 1)])
+    ax.set_ylim(0, None)
+    ax.set_ylabel("% de fallo (sobre las que la empiezan)")
+    ax.set_title("Riesgo de cada vuelta de la tanda (barra: IC 95 %)")
+    ax = axs[1, 0]
+    datos = [L[k].dropna() for k in range(N)]
+    ax.boxplot(datos, showfliers=False)
+    ax.set_xticks(range(1, N + 1), ["1.ª\n(parado)"] + [f"{k}.ª" for k in range(2, N + 1)])
+    for k, s_ in enumerate(datos):
+        ax.text(k + 1, s_.median(), f" {s_.median():.2f}", fontsize=8, va="bottom")
+    ax.set_ylabel("tiempo de vuelta (s)")
+    ax.set_title("Tiempo según la posición en la tanda (completas)")
+    ax = axs[1, 1]
+    if len(tel):
+        bins = np.arange(0, 440, 10)
+        for sub, c, lab in [(ko[ko.pos == 1], AZUL, "1.ª vuelta (desde parado)"),
+                            (ko[ko.pos > 1], ROJO, "vueltas lanzadas")]:
+            ax.hist(sub.distancia_m, bins=bins, color=c, alpha=0.6, label=f"{lab} ({len(sub)})")
+        ax.legend(fontsize=8)
+    ax.set_xlabel("distancia recorrida en la vuelta al fallar (m)")
+    ax.set_ylabel("fallos")
+    ax.set_title("Dónde falla")
+    ax = axs[1, 2]
+    if len(tel) and "x" in ko:
+        tray = None
+        for f in sorted(glob.glob(str(RAIZ / "logs" / "2026111*_panel.csv")))[-1:]:
+            tt = pd.read_csv(f, low_memory=False, usecols=["x", "y", "vuelta"])
+            buena = tel[(tel.fichero == Path(f).name[:15]) & (tel.ok == 1)]
+            if len(buena):
+                tray = tt[tt.vuelta == buena.vuelta.iloc[-1]]
+        if tray is not None:
+            ax.plot(tray.x, tray.y, c=GRIS, lw=1.5, label="vuelta completa")
+        for sub, c, lab in [(ko[ko.pos == 1], AZUL, "fallo en la 1.ª"), (ko[ko.pos > 1], ROJO, "fallo lanzada")]:
+            ax.scatter(sub.x, sub.y, s=14, c=c, alpha=0.6, label=lab, edgecolor="none")
+        ax.set_aspect("equal")
+        ax.legend(fontsize=8, loc="best")
+    ax.set_title("Dónde choca (último fotograma)")
+    fig.suptitle(f"simple_v9: {len(d)} tandas de 5 vueltas seguidas sin reiniciar")
+    fig.tight_layout()
+    fig.savefig(FIG / "12_tandas.png")
+    plt.close(fig)
+
+    # Figura 13: qué pesa en las tandas y efecto de los más importantes
+    top = I["P(5/5)"].sort_values(ascending=False).index[:4].tolist()
+    fig = plt.figure(figsize=(16, 8.5))
+    gs = fig.add_gridspec(2, 4)
+    ax = fig.add_subplot(gs[:, :2])
+    orden = I.mean(axis=1).sort_values().index
+    y = np.arange(len(orden))
+    for i, (col, c) in enumerate(zip(I.columns, [VERDE, AZUL, "#f59e0b"])):
+        clas = col.startswith("P(")
+        malo = cal[col] < (0.65 if clas else 0.3)
+        ax.barh(y + (i - 1) * 0.27, I[col].reindex(orden), height=0.27, color=c, alpha=0.35 if malo else 1,
+                hatch="//" if malo else None, edgecolor=c if malo else None,
+                label=f"{col} · {'AUC' if clas else 'R²'} {cal[col]:.2f}" + (" (no predice)" if malo else ""))
+    ax.set_yticks(y, orden)
+    ax.set_xlabel("peso (importancia por permutación, suma 1)")
+    ax.legend(fontsize=8, loc="lower right")
+    ax.set_title("Qué pesa en las tandas")
+    m, sub = mods["P(5/5)"]
+    for k, p in enumerate(top):
+        ax = fig.add_subplot(gs[k // 2, 2 + k % 2])
+        pdp = partial_dependence(m, sub[PARAMS], [p], grid_resolution=30, percentiles=(0.02, 0.98))
+        ax.plot(pdp["grid_values"][0], pdp["average"][0] * 100, c=VERDE, lw=2)
+        ax.scatter(sub[p], sub.ok * 100, s=4, c=np.where(sub.ok == 1, AZUL, ROJO), alpha=0.15)
+        ax.axvline(e[p], c=NEGRO, ls=":", lw=1)
+        ax.set_ylim(-3, 103)
+        ax.set_title(p)
+        ax.set_ylabel("% tandas 5/5", fontsize=8)
+    fig.suptitle("Importancia en las tandas y efecto medio de los 4 parámetros que más pesan en acabar las 5 "
+                 "(punteado: elegida)")
+    fig.tight_layout()
+    fig.savefig(FIG / "13_tandas_importancia.png")
+    plt.close(fig)
+
+    # Figura 14: decisión en tandas
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.errorbar(G.t_lanz, G.p_vuelta * 100, yerr=[(G.p_vuelta - G.cota_vuelta) * 100, np.zeros(len(G))], fmt="none",
+                ecolor=GRIS, alpha=0.5, lw=1)
+    sc = ax.scatter(G.t_lanz, G.p_vuelta * 100, s=G.intentadas * 6, c=G.v_max, cmap="viridis", alpha=0.85,
+                    edgecolor="white", lw=0.5)
+    fig.colorbar(sc, ax=ax, label="v_max")
+    ax.scatter([e.t_lanz], [e.p_vuelta * 100], s=e.intentadas * 6 + 150, facecolor="none", edgecolor=ROJO, lw=2,
+               label=f"elegida #{e.ensayo:.0f}: v_max {e.v_max:.2f} ({e.vueltas:.0f}/{e.intentadas:.0f} vueltas, "
+                     f"{e.ok:.0f}/{e.n:.0f} tandas)")
+    ax.axhline(zv / zi * 100, c=VERDE, ls="--", lw=1, label=f"su vecindad: {zv / zi:.0%} por vuelta ({len(zona)} tandas)")
+    ax.axhline(63 / 65 * 100, c=NEGRO, ls=":", lw=1, label="w14_v93_v6 en vueltas sueltas (63/65)")
+    ax.set_xlabel("tiempo mediano de vuelta lanzada (s)")
+    ax.set_ylabel("% vueltas completas en tandas (barra: hasta la cota del 95 %)")
+    ax.set_title("Combinaciones con ≥ 15 vueltas en tandas (tamaño = vueltas intentadas)")
+    ax.legend(fontsize=8, loc="lower left")
+    fig.tight_layout()
+    fig.savefig(FIG / "14_tandas_decision.png")
+    plt.close(fig)
+    return e
 
 
 def main():
@@ -750,6 +1026,7 @@ def main():
         palancas(df, reg)
     barridos()
     decision()
+    tandas()
     titulo("MEJORES VUELTAS INDIVIDUALES")
     print(df[df.ok == 1].nsmallest(10, "tiempo_s")[["estudio", "tiempo_s", "J", "e_rms", "cambios_w_s"] + PARAMS]
           .round(4).to_string(index=False))

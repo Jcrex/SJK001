@@ -156,6 +156,7 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 - Desde el panel se le pueden **proponer ensayos en caliente** (botón «Probar en el optimizador»).
 - La **ventana de búsqueda se desplaza sola** cuando los mejores ensayos se acercan a un borde, así que no hay techo para ningún parámetro.
 - Con `repetir` = N (config), un candidato que completa su vuelta **se repite enseguida hasta N veces** y se deja al primer fallo: los buenos se miden con una tanda y los malos cuestan una sola vuelta.
+- Con `vueltas_seguidas` = N (config), cada ensayo es una **tanda de N vueltas seguidas sin reiniciar**. Mide la fiabilidad encadenando vueltas, con vueltas lanzadas que cruzan la meta a toda velocidad. La tanda solo cuenta como completa si acaba las N. El tiempo es la media por vuelta, y un fallo puntúa por la distancia recorrida en toda la tanda.
 - Cada 10 ensayos **repite uno de los mejores** para comprobar que no fue suerte. Los mejores se ordenan por la **J media de todas sus repeticiones**: un choque cuenta ~75, así que unos parámetros que completan 2 de 24 vueltas ya no pasan por buenos por una vuelta con suerte.
 
 | Configuración | Estudio | Qué cambia |
@@ -165,6 +166,8 @@ J = t_{vuelta} + 0.5\,\frac{e_{rms}}{100} + 0.1\cdot\text{cambios de signo de } 
 | `tools/optimizador/config_v5.json` | `simple_v5` | v_max en [84, 92], k_hor en [0.035, 0.06] y ventanas de ±20 % alrededor de `simple_v4` #194. Cada candidato se confirma 5 veces. 1338 ensayos (g0–g6): la ventana de v_max subió sola hasta 93–102, con 5.25 s en 4 de 4 a v_max = 95.5 |
 | `tools/optimizador/config_v6.json` | `simple_v6` | w_max = 14 fijo, k_v_curva en [1.0, 2.2], v_max en [93, 100] y ±20 % alrededor de #775. 719 ensayos: ~5.0 s de mediana a v_max ≈ 99, pero 60 % de vueltas completas |
 | `tools/optimizador/config_v7.json` | `simple_v7` | **Fiabilidad:** v_max fija en 93, J con más peso a la estabilidad (peso_e_rms 2.0, peso_cambios_w 0.3) y `repetir` = 5. 1009 ensayos; mejor candidato 10/10 a 5.30 s con e_rms 213 |
+| `tools/optimizador/config_v8.json` | `simple_v8` | v_max libre en [93, 97] con la J de `simple_v7`. Parado a los 34 ensayos para pasar a tandas |
+| `tools/optimizador/config_v9.json` | `simple_v9` | **5 vueltas seguidas por ensayo** (`vueltas_seguidas` = 5). 576 tandas, 41 % acaban las 5. Mejor: #271, 20/20 vueltas en 4 tandas a 4.97 s por vuelta lanzada (preset `w14_v92_v9`); su zona da el 92 % por vuelta |
 
 `tools/optimizar.sh --informe <estudio>` genera estas gráficas. Las de abajo son del último estudio, `simple_v7_g3` (1009 ensayos válidos a v_max = 93, J con más peso a la estabilidad):
 
@@ -196,7 +199,7 @@ tools/barrido.sh --base optuna_simple_v4 --param v_max --valores 76,78,80,82,84,
 
 ### 3.4 Análisis fuera de línea
 
-- `tools/optimizador/macro_analisis.py`: análisis de todos los ensayos, barridos y telemetría, con una sección final que elige la mejor combinación (figura 10). Calcula la importancia de cada parámetro por separado para el tiempo, la fiabilidad y la oscilación (bosques aleatorios con validación cruzada), la tendencia de los buenos parámetros con la velocidad, qué término del control hace el trabajo y dónde y por qué falla el coche. Escribe las figuras en `docs/img/estudio/`. Resultados en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
+- `tools/optimizador/macro_analisis.py`: análisis de todos los ensayos, barridos y telemetría, con una sección final que elige la mejor combinación (figura 10). Calcula la importancia de cada parámetro por separado para el tiempo, la fiabilidad y la oscilación (bosques aleatorios con validación cruzada), la tendencia de los buenos parámetros con la velocidad, qué término del control hace el trabajo y dónde y por qué falla el coche. Una sección aparte analiza las tandas de vueltas seguidas (`simple_v9`, figuras 12–14): el riesgo de cada vuelta de la tanda, dónde fallan las vueltas lanzadas y qué combinación aguanta. Escribe las figuras en `docs/img/estudio/`. Resultados en [`docs/ESTUDIO_PID.md`](docs/ESTUDIO_PID.md).
 - `analysis/kappa_vs_trayectoria.py`: correlaciona la κ que ve la cámara con la curvatura que recorre el coche (odometría). Da el adelanto real de la percepción y comprueba que la escala es ≈ 1.
 - `tools/resumen_log.py`: resumen de un log (error, giro, oscilación y fotogramas perdidos).
 - `tools/bench_percepcion.py`: coste en ms de la percepción.
@@ -255,8 +258,8 @@ tools/panel.sh                                   # panel en http://localhost:805
 # En unibotics.org (ejercicio Follow Line, simulador local): pegar src/follow_line.py y pulsar play.
 # Arranca con los parámetros elegidos (5.29 s); el panel no hace falta para correr.
 # El puerto 7163 es la conexión de la web con el contenedor, no una página.
-tools/optimizar.sh tools/optimizador/config_v7.json   # optimizador (opcional)
-tools/optimizar.sh --informe simple_v7                # informe del estudio
+tools/optimizar.sh tools/optimizador/config_v9.json   # optimizador, tandas de 5 vueltas (opcional)
+tools/optimizar.sh --informe simple_v9                # informe del estudio
 tools/barrido.sh --help                               # barrido de un parámetro
 uv run --with pandas --with scikit-learn --with matplotlib --with scipy \
   python tools/optimizador/macro_analisis.py          # macroanálisis → docs/img/estudio/

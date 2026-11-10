@@ -6,11 +6,12 @@ Necesita el panel (tools/panel.sh) en marcha y el controlador corriendo (play en
 la web). Funciona como un cliente más del panel, así que en el navegador se ven
 las gráficas, el mapa y la tabla de cada ensayo mientras optimiza.
 
-Cada ensayo es una vuelta desde parado:
+Cada ensayo es una tanda de «vueltas_seguidas» vueltas (1 por defecto) desde parado:
   1. el modelo (Optuna, TPE) propone parámetros;
-  2. se mandan al controlador y se devuelve el coche a la salida;
-  3. se espera a que acabe la vuelta, choque o se agote el tiempo;
-  4. se calcula J (ver config.json) y el modelo aprende de ese resultado.
+  2. se mandan al controlador y se devuelve el coche a la salida (una sola vez);
+  3. se esperan las vueltas seguidas, sin reiniciar entre ellas, hasta que acaben
+     todas, choque o se agote el tiempo de una;
+  4. se juntan sus métricas, se calcula J (ver config.json) y el modelo aprende.
 
 Todo se guarda en logs/optuna/<estudio>.db: se puede parar con Ctrl+C y reanudar
 con el mismo comando. El mejor resultado se guarda también como preset del panel
@@ -43,13 +44,40 @@ def cargar_config(ruta):
 
 
 def objetivo(fila, cfg):
-    """J a minimizar a partir de la fila de la vuelta (o None si no hubo fila)."""
+    """J a minimizar a partir de la fila de la vuelta o de la tanda (o None si no hubo fila).
+    En una tanda, el tiempo es la media por vuelta y un fallo cuenta lo recorrido sobre
+    la distancia de toda la tanda."""
     o = cfg["objetivo"]
     if fila and fila.get("completada", 1):
         return (fila["tiempo_s"] + o["peso_e_rms"] * fila["e_rms"] / 100.0
                 + o["peso_cambios_w"] * fila["cambios_w_s"])
-    hecho = min((fila or {}).get("distancia_m", 0.0) / o["distancia_vuelta"], 1.0)
+    n = (fila or {}).get("n_vueltas", 1)
+    hecho = min((fila or {}).get("distancia_m", 0.0) / (o["distancia_vuelta"] * n), 1.0)
     return o["penal_fallo"] * (2.0 - hecho)
+
+
+def juntar(filas, n):
+    """Una fila con las métricas de una tanda de vueltas seguidas (la última puede ser
+    el intento fallido). tiempo_s es la media por vuelta; e_rms y cambios_w_s se
+    ponderan con la duración de cada vuelta."""
+    if not filas:
+        return None
+    if n == 1:  # una vuelta por ensayo (estudios hasta simple_v8): la fila tal cual
+        return filas[0]
+    dur = [max(f.get("tiempo_s", 0.0), 1e-6) for f in filas]
+    T = sum(dur)
+    ok = [f for f in filas if f.get("completada")]
+    return {
+        "completada": int(len(ok) == n and len(filas) == n),
+        "n_vueltas": n, "vueltas_ok": len(ok),
+        "tiempos": " ".join(str(f["tiempo_s"]) for f in ok),
+        "tiempo_s": round(sum(f["tiempo_s"] for f in ok) / len(ok), 3) if ok else 0.0,
+        "e_rms": round(math.sqrt(sum(f.get("e_rms", 0.0) ** 2 * d for f, d in zip(filas, dur)) / T), 1),
+        "e_max": max(f.get("e_max", 0.0) for f in filas),
+        "cambios_w_s": round(sum(f.get("cambios_w_s", 0.0) * d for f, d in zip(filas, dur)) / T, 2),
+        "perdidos": sum(f.get("perdidos", 0) for f in filas),
+        "distancia_m": round(sum(f.get("distancia_m", 0.0) for f in filas), 1),
+    }
 
 
 def recortar(valores, espacio):
@@ -377,8 +405,8 @@ class Ensayador:
             await asyncio.sleep(1)
 
     async def vuelta(self, params):
-        """Aplica los parámetros, vuelve a la salida y corre una vuelta. Devuelve
-        (fila de la vuelta o None, motivo)."""
+        """Aplica los parámetros, vuelve a la salida y corre la tanda de vueltas
+        seguidas. Devuelve (fila de la vuelta o de la tanda, o None; motivo)."""
         await self.listo()
         while not self.cola.empty():
             self.cola.get_nowait()
@@ -397,12 +425,29 @@ class Ensayador:
             self.vigilados = None
 
     async def _correr(self):
+        """Vuelve a la salida una vez y corre «vueltas_seguidas» vueltas sin reiniciar.
+        Devuelve (fila de la tanda o None, motivo)."""
         await self.enviar({"tipo": "reiniciar"})
         r = await self.esperar(lambda m: m["tipo"] == "reinicio" and m["motivo"] == "pedido", 10)
         if r is None:
             return None, "sin_respuesta"
         if not r.get("ok"):
             return None, "reinicio_fallido"
+        n = int(self.cfg.get("vueltas_seguidas", 1))
+        filas = []
+        for i in range(n):
+            fila, motivo = await self._una_vuelta()
+            if motivo in ("sin_respuesta", "reinicio_fallido", "interrumpido", "interferencia", "vuelta_corta"):
+                return None, motivo
+            if fila:
+                filas.append(fila)
+            if motivo:  # choque, línea perdida o timeout: la tanda acaba aquí
+                return juntar(filas, n), motivo
+            if n > 1:
+                print(f"[opt]   vuelta {i + 1}/{n}: {fila['tiempo_s']} s, e_rms {fila.get('e_rms')}", flush=True)
+        return juntar(filas, n), ""
+
+    async def _una_vuelta(self):
         m = await self.esperar(lambda m: m["tipo"] in ("vuelta", "reinicio", "hola"),
                                self.cfg["t_max_ensayo"])
         if self.interferido:  # alguien cambió parámetros a mitad de vuelta
@@ -470,7 +515,7 @@ async def principal(ruta_cfg):
     f_csv = SALIDA / f"{base}_ensayos.csv"
     nuevo = not f_csv.exists()
     salida_csv = open(f_csv, "a", newline="", buffering=1)
-    cols = ["ensayo", "J", "completada", "motivo", "tiempo_s", "e_rms", "e_max", "cambios_w_s",
+    cols = ["ensayo", "J", "completada", "motivo", "vueltas_ok", "tiempos", "tiempo_s", "e_rms", "e_max", "cambios_w_s",
             "perdidos", "distancia_m", "fecha"] + list(espacio) + list(fijos)
     escritor = csv.DictWriter(salida_csv, cols + ["estudio"], extrasaction="ignore")
     if nuevo:
@@ -561,7 +606,8 @@ async def principal(ruta_cfg):
                 continue
             J = objetivo(fila, cfg)
             datos = dict(fila or {}, motivo=motivo, completada=int(bool(fila and fila.get("completada"))))
-            for k in ("tiempo_s", "e_rms", "e_max", "cambios_w_s", "perdidos", "distancia_m"):
+            for k in ("tiempo_s", "e_rms", "e_max", "cambios_w_s", "perdidos", "distancia_m",
+                      "n_vueltas", "vueltas_ok", "tiempos"):
                 if k in datos:
                     trial.set_user_attr(k, datos[k])
             trial.set_user_attr("completada", datos["completada"])
@@ -570,8 +616,9 @@ async def principal(ruta_cfg):
             hechos += 1
             escritor.writerow({**datos, **envio, "ensayo": trial.number, "J": round(J, 3),
                                "fecha": time.strftime("%Y-%m-%d %H:%M:%S"), "estudio": ven.actual})
-            res = (f"{datos.get('tiempo_s', '–')} s, e_rms {datos.get('e_rms', '–')}"
-                   if datos["completada"] else f"FALLO ({motivo})")
+            tanda = f"{datos.get('vueltas_ok', 0)}/{datos['n_vueltas']} " if "n_vueltas" in datos else ""
+            res = (f"{tanda}{datos.get('tiempo_s', '–')} s, e_rms {datos.get('e_rms', '–')}"
+                   if datos["completada"] else f"FALLO {tanda}({motivo})")
             ens.ultimo = f"#{trial.number}: J={J:.2f} · {res}"
             print(f"[opt] {ens.ultimo}  v_max={params.get('v_max')} kp={params.get('kp')} "
                   f"td={params.get('td')} k_ff={params.get('k_ff')} k_hor={params.get('k_hor')}",

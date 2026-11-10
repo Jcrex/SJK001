@@ -6,6 +6,11 @@
 > sin sufijo para `simple_v3` (w_max = 6), `_w12` para `simple_v4`–`v5` y `_w14` para `simple_v6`–`v7`. El resumen
 > final y los parámetros elegidos están justo debajo; el detalle, en §17 y §18. Las secciones 0–9 se escribieron con
 > los datos de `simple_v1`–`v3` (2026-11-06) y conservan sus cifras de entonces, aunque sus figuras ya incluyen todo.
+>
+> **Actualización 2026-11-10:** §19 añade `simple_v9`, con 576 tandas de **5 vueltas seguidas sin reiniciar**
+> (figuras 12–14). Las vueltas lanzadas tardan 4.97 s, pero la fiabilidad encadenando vueltas es menor: un 92 % por
+> vuelta en la mejor zona, frente al 97 % de las vueltas sueltas desde parado. Las figuras de w_max = 14 incluyen
+> ahora `simple_v8` (34 ensayos).
 
 ## Resumen final
 
@@ -906,3 +911,89 @@ Recuperación: v_perdida = 4, t_perdida_max = 0.8 s, t_atasco = 0.7 s, reinicio 
   de cambiar el valor por defecto.
 - La primera curva sigue fallando ~1 vez de cada 30: depende del fotograma en que se detecta y ningún parámetro lo
   elimina del todo.
+
+## 19. Tandas de 5 vueltas seguidas: `simple_v9` (2026-11-10)
+
+Hasta aquí, cada ensayo era **una vuelta desde parado**: el coche vuelve a la salida antes de cada vuelta. El 97 % de
+`w14_v93_v6` mide eso. En `simple_v9`, cada ensayo es una **tanda de 5 vueltas seguidas** con los mismos parámetros y
+un solo reinicio al principio (opción `vueltas_seguidas` del optimizador, `config_v9.json`). La tanda solo cuenta
+como completa si acaba las 5. El tiempo es la media por vuelta: la 1.ª incluye los 0.35 s del reinicio y las otras
+cuatro son **lanzadas**, porque cruzan la meta a toda velocidad. J es la de `simple_v7` y un fallo puntúa por la
+distancia recorrida en toda la tanda: chocar en la 4.ª vuelta vale ~77, frente a ~10.5 si acaba las 5. v_max es libre
+(la ventana empezó en 93–97 y bajó sola a 91–95). No se importaron ensayos anteriores, porque su J es de una sola
+vuelta.
+
+`macro_analisis.py` lo trata en una sección aparte (11) y no lo mezcla con las vueltas sueltas: un ensayo es una
+tanda. `simple_v8` (34 ensayos de una vuelta, v_max 93–97) entra en el régimen w_max = 14, que pasa a llamarse
+`simple_v6–v8`; no cambia ninguna conclusión de §18.
+
+![Tandas](img/estudio/12_tandas.png)
+
+**576 tandas** (16:06–18:56): **41 % acaban las 5** y el 83 % de las vueltas intentadas se completan (1701 de 2039).
+Con la convergencia del optimizador, el porcentaje de tandas 5/5 pasó del ~25 % a ~45–60 % (figura, arriba a la
+izquierda).
+
+- **El riesgo es parecido en todas las vueltas:** 17 % en la 1.ª, 18 % en la 2.ª, 19 % en la 3.ª, 14 % en la 4.ª y
+  13 % en la 5.ª. Las dos últimas salen algo más bajas porque solo llegan a ellas las combinaciones buenas. No hay
+  desgaste ni deriva entre vueltas: cada vuelta es un sorteo casi independiente, así que **P(5/5) ≈ p⁵**.
+- **Tiempo:** 5.25 s la 1.ª y **4.97–4.98 s cada vuelta lanzada**, muy constante (caja de ±0.03 s).
+- **Fallan en sitios distintos** (telemetría del panel, 1525 vueltas):
+  - **La 1.ª, desde parado** (18 % de fallos), cae en la **primera curva, 40–50 m (64 %)**, y en 120–130 m (17 %).
+  - **Las lanzadas** (14 %) casi nunca fallan ahí. Fallan en las dos curvas siguientes de la chicane sur:
+    **70–80 m (47 %)** y **110–120 m (28 %)**.
+  - En las lanzadas el error es mayor (e_rms 241 frente a 229 px) y el giro va saturado más tiempo (11 % frente a
+    7 %).
+  - Hipótesis: al empezar la vuelta lanzada, el coche llega a la chicane con el estado que trae de la vuelta anterior
+    (desplazamiento lateral, rumbo, filtro de la D), no centrado y recto como tras el reinicio. Supera la primera
+    curva, pero sale de ella peor colocado para las dos siguientes.
+- La chicane norte (300–360 m), que en vueltas sueltas a v ≥ 97 daba el 30 % de los fallos, apenas falla aquí: v_max
+  se quedó en 91–93.
+
+![Importancia en tandas](img/estudio/13_tandas_importancia.png)
+
+**Qué pesa:**
+- **Tiempo:** v_max explica el 91 % (R² = 0.75).
+- **Fiabilidad:** el modelo **no predice** (AUC 0.55 para acabar las 5; R² < 0 para el número de vueltas). El
+  optimizador convergió pronto a una zona estrecha (kp ≈ 0.012, td ≈ 0.071, n_filtro ≈ 6.8, k_ff ≈ 0.63,
+  k_hor ≈ 0.038, t_mirar ≈ 0.128, v_max ≈ 92). Dentro de esa zona, que una tanda salga bien depende del azar, no de
+  los parámetros.
+- Las dependencias parciales (n_filtro ≥ 6.8, k_v_curva ≥ 1.85 y t_mirar ≈ 0.128 algo mejores) son débiles y no
+  conviene leerlas como reglas.
+- La zona coincide con lo que §18 recomendaba para una vuelta (td ≈ 0.07, k_hor ≈ 0.039, kp ≥ 0.011), con algo más
+  de kp y menos filtro de la D.
+
+![Decisión en tandas](img/estudio/14_tandas_decision.png)
+
+### Decisión en tandas
+
+Se agrupan las tandas por combinación exacta. Se ordenan por la cota de Wilson (95 %) de las vueltas completadas sobre
+las intentadas, y a igualdad por el tiempo.
+
+| Combinación | Tandas 5/5 | Vueltas | Cota por vuelta | Vuelta lanzada | Media en la tanda | e_rms |
+|---|---|---|---|---|---|---|
+| **#271 (preset `w14_v92_v9`)** | **4/4** | **20/20** | **84 %** | **4.97 s** | **5.02 s** | **235 px** |
+| #411 | 4/4 | 20/20 | 84 % | 4.97 s | 5.03 s | 234 px |
+| #171 | 4/4 | 20/20 | 84 % | 4.98 s | 5.03 s | 241 px |
+| #426 | 4/4 | 20/20 | 84 % | 4.99 s | 5.05 s | 232 px |
+| Vecindad de #271 (±15 % de la ventana, 12 combinaciones) | 17/25 (68 %) | 95/103 (92 %) | 85 % | 4.97 s | — | — |
+| `w14_v93_v6` en tandas | 0/1 | 0/1 | — | — | — | — |
+
+Elegida en tandas: **#271**, v_max 92.2, k_v_curva 1.852, v_min 7.41, kp 0.01202, td 0.0715, n_filtro 6.81,
+k_ff 0.629, kv_kp 0.0014, t_mirar 0.1267, z_mirar_min 0.316, k_hor 0.0382 (w_max 14, ti 0).
+
+**Lectura:**
+- **Velocidad:** una vuelta lanzada tarda **4.97 s**, frente a los 5.29 s de `w14_v93_v6` desde parado. Casi
+  toda la diferencia viene de no reiniciar: la 1.ª vuelta de la tanda, desde parado, tarda 5.25 s.
+- **Fiabilidad:** las 4 combinaciones con 20/20 son el mejor resultado posible con 20 vueltas, pero su vecindad, casi
+  los mismos parámetros, da un **92 % por vuelta** y un **68 % de tandas 5/5**. Seguramente ahí está la fiabilidad
+  real de la zona; los 20/20 tienen parte de racha.
+- **Comparación:** con el 97 % por vuelta de `w14_v93_v6` en vueltas sueltas, cabría esperar un 86 % de tandas 5/5.
+  No sabemos si ese 97 % se mantiene en vueltas lanzadas: en tandas solo se probó una vez (chocó en la 1.ª).
+
+### Pendiente
+
+- **Confirmar con ≥ 10 tandas (50 vueltas)** `w14_v92_v9` (#271) y `w14_v93_v6` en las mismas condiciones, para
+  saber cuál es más fiable encadenando vueltas. Ahora `barrido.sh` hace vueltas sueltas: habría que darle la opción
+  de tandas.
+- **Atacar la chicane sur en vueltas lanzadas** (70–80 m y 110–120 m): ver en la telemetría con qué desplazamiento y
+  rumbo cruza la meta el coche y si el término D o la banda del horizonte llegan saturados a la primera curva.

@@ -619,6 +619,28 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 1. Confirmar con ≥ 40 vueltas la combinación elegida con td ≈ 0.07 y k_hor ≈ 0.04 (ESTUDIO_PID.md §18, pendiente).
 2. Probar otros circuitos con los valores por defecto.
 
+### 5.15 Tandas de 5 vueltas seguidas: `simple_v8`–`v9` (2026-11-10)
+
+**Hecho:**
+- `simple_v8` (`config_v8.json`, 34 ensayos de una vuelta): v_max libre en 93–97 con la J de `simple_v7`. Se paró
+  enseguida para cambiar de prueba.
+- **Cambio de prueba pedido por el usuario:** fiabilidad en **5 vueltas seguidas sin reiniciar**. `optimizar.py` tiene
+  la opción `vueltas_seguidas`: un reinicio y N vueltas encadenadas. La J usa la media por vuelta y, si falla, la
+  distancia recorrida en toda la tanda.
+- `simple_v9` (`config_v9.json`, 576 tandas):
+  - el 41 % acaban las 5;
+  - las vueltas lanzadas tardan **4.97 s**;
+  - las lanzadas fallan en la chicane sur (70–80 m y 110–120 m), y la 1.ª, desde parado, en la primera curva (40–50 m).
+- Macroanálisis actualizado (sección 11 de `macro_analisis.py`, figuras 12–14, ESTUDIO_PID.md §19). Mejor
+  combinación en tandas: **#271, 4/4 tandas y 20/20 vueltas** a 4.97 s por vuelta lanzada (preset `w14_v92_v9`).
+  Su vecindad da el 92 % por vuelta y el 68 % de tandas 5/5.
+- Los valores por defecto de `src/follow_line.py` siguen siendo `w14_v93_v6`.
+
+**Si se retoma:**
+1. Añadir tandas a `barrido.sh` y comparar `w14_v92_v9` con `w14_v93_v6` en ≥ 10 tandas cada uno. Cambiar el valor
+   por defecto solo si `w14_v92_v9` gana.
+2. Estudiar en la telemetría cómo cruza la meta el coche en las vueltas lanzadas (chicane sur).
+
 ## 6. Registro de progreso
 
 | Fecha | Fase | Resultado / tiempo por vuelta | Notas |
@@ -640,3 +662,4 @@ barrido de `w_max` y §11 para `simple_v4`). Lo regenera `tools/optimizador/macr
 | 2026-11-06 | 3 | **5.25 s, 4 de 4** (#775 de simple_v5: v_max = 95.5, k_hor = 0.044, k_v_curva = 2.63); mejor vuelta 5.18 s | 1338 ensayos (g0–g6). Techo en la chicane norte (67 % de los fallos, giro saturado la mitad del tiempo). Macroanálisis regenerado con figuras para w_max = 12 (5.12) |
 | 2026-11-07 | 3 | **5.19 s** (mediana, 34/40; #775 con w_max = 14 y k_v_curva = 1.8) · 5.12 s con k_v_curva = 1.2 (15/20) | Barridos de w_max (14 mejor) y k_v_curva (1.2–3.2) sobre #775. Lanzado simple_v6 (5.13) |
 | 2026-11-08 | 3 → cierre | **5.29 s, 63 de 65 vueltas (97 %)** (v_max = 93, w_max = 14; preset `w14_v93_v6`, valores por defecto del controlador) · más rápido: ~5.0 s con el 60–76 % (simple_v6, v ≈ 99) | Objetivo cambiado a fiabilidad. Barridos de v_max y t_mirar, simple_v7 (repetición inmediata, J con más peso a la estabilidad), cronómetro corregido y macroanálisis final con decisión por cota de Wilson (5.14) |
+| 2026-11-10 | 3 | **4.97 s por vuelta lanzada, 20/20 vueltas en 4 tandas de 5 seguidas** (#271 de simple_v9, v_max = 92.2; preset `w14_v92_v9`) · zona: 92 % por vuelta, 68 % de tandas 5/5 | Nueva prueba: 5 vueltas seguidas sin reiniciar (`vueltas_seguidas` en el optimizador). simple_v9: 576 tandas, 41 % 5/5. Macroanálisis con sección de tandas (5.15) |
